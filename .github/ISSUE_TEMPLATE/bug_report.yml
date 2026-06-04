@@ -1,0 +1,84 @@
+name: Bug Report
+description: Report a bug in the P&ID Intelligence System
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill in as much detail as possible.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      options:
+        - PDF Upload & Processing
+        - Tag Extraction (Vision)
+        - Knowledge Graph
+        - Natural Language Query
+        - Equipment Search
+        - Graph Visualisation
+        - SOP / Document Management
+        - Frontend (UI)
+        - Backend API
+        - Docker / Infrastructure
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: unit
+    attributes:
+      label: Process Unit (if applicable)
+      placeholder: e.g. CDU, VDU, HCU
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      placeholder: What went wrong? What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      placeholder: |
+        1. Select unit CDU
+        2. Upload file X
+        3. Click "Process"
+        4. See error ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs or Error Messages
+      render: shell
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Critical (system crash / data loss)
+        - High (feature broken)
+        - Medium (feature degraded)
+        - Low (cosmetic / minor)
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "e.g. Docker local, Windows 11, Chrome 124"
