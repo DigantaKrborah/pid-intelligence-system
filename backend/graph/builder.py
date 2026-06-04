@@ -102,6 +102,112 @@ class GraphBuilder:
         graph = self.load_or_create(unit_name)
         return nx.node_link_data(graph)
 
+    def get_frontend_format(self, unit_name: str, include_cross_unit: bool = False) -> dict:
+        """
+        Returns graph as flat nodes/edges lists for streamlit-agraph.
+        Merges cross-unit edges if requested.
+        """
+        graph = self.load_or_create(unit_name)
+        nodes = [
+            {"id": n, "label": n, **{k: v for k, v in d.items()}}
+            for n, d in graph.nodes(data=True)
+        ]
+        edges = [
+            {"source": u, "target": v, **{k: v2 for k, v2 in d.items()}}
+            for u, v, d in graph.edges(data=True)
+        ]
+
+        if include_cross_unit:
+            cross = self._load_cross_unit()
+            cross_unit_name = unit_name.upper()
+            # Add foreign nodes and cross-unit edges
+            for n, d in cross.nodes(data=True):
+                if d.get("unit") != cross_unit_name and n not in graph:
+                    nodes.append({"id": n, "label": n, "cross_unit": True, **d})
+            for u, v, d in cross.edges(data=True):
+                src_unit = cross.nodes[u].get("unit", "")
+                tgt_unit = cross.nodes[v].get("unit", "")
+                if src_unit == cross_unit_name or tgt_unit == cross_unit_name:
+                    edges.append({"source": u, "target": v, "cross_unit": True, **d})
+
+        return {"nodes": nodes, "edges": edges}
+
+    def get_impact_analysis(self, unit_name: str, tag: str, depth: int = 5) -> dict:
+        """
+        Returns all downstream equipment affected if `tag` is isolated/fails.
+        Severity is based on downstream count.
+        """
+        graph = self.load_or_create(unit_name)
+        if tag not in graph:
+            return {"tag": tag, "found": False, "affected": [], "affected_count": 0, "severity": "unknown"}
+
+        affected = list(nx.dfs_preorder_nodes(graph, tag, depth_limit=depth))[1:]
+
+        affected_by_type: dict[str, list[str]] = {}
+        for node in affected:
+            node_type = graph.nodes[node].get("tag_type", "other")
+            affected_by_type.setdefault(node_type, []).append(node)
+
+        count = len(affected)
+        severity = "high" if count > 10 else "medium" if count > 3 else "low"
+
+        return {
+            "tag": tag,
+            "found": True,
+            "affected": affected,
+            "affected_count": count,
+            "affected_by_type": affected_by_type,
+            "severity": severity,
+            "in_degree": graph.in_degree(tag),
+            "out_degree": graph.out_degree(tag),
+        }
+
+    def rebuild_from_tags(self, unit_name: str, tags: list[dict], connections: list[dict]) -> None:
+        """
+        Rebuild a unit graph from raw data (e.g. after graph JSON is lost).
+        tags: [{"tag", "tag_type", "description", ...}]
+        connections: [{"source", "target", "connection_type", "line_number"}]
+        """
+        graph = nx.DiGraph(unit=unit_name)
+        for t in tags:
+            tag = t.pop("tag")
+            graph.add_node(tag, unit=unit_name, **t)
+        for c in connections:
+            graph.add_edge(
+                c["source"],
+                c["target"],
+                connection_type=c.get("connection_type", "pipeline"),
+                line_number=c.get("line_number", ""),
+            )
+        self._graphs[unit_name] = graph
+        self.save(unit_name)
+        logger.info(f"Rebuilt graph for {unit_name}: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
+
+    def get_cross_unit_graph_data(self) -> dict:
+        """Returns the cross-unit graph in frontend format."""
+        cross = self._load_cross_unit()
+        nodes = [{"id": n, "label": n, **d} for n, d in cross.nodes(data=True)]
+        edges = [{"source": u, "target": v, **d} for u, v, d in cross.edges(data=True)]
+        return {"nodes": nodes, "edges": edges}
+
+    def get_all_units_combined(self) -> dict:
+        """Merge all loaded unit graphs + cross-unit connections into one view."""
+        combined = nx.DiGraph()
+        for unit_name, graph in self._graphs.items():
+            for n, d in graph.nodes(data=True):
+                combined.add_node(n, **d)
+            for u, v, d in graph.edges(data=True):
+                combined.add_edge(u, v, **d)
+        cross = self._load_cross_unit()
+        for n, d in cross.nodes(data=True):
+            if n not in combined:
+                combined.add_node(n, **d)
+        for u, v, d in cross.edges(data=True):
+            combined.add_edge(u, v, cross_unit=True, **d)
+        nodes = [{"id": n, "label": n, **d} for n, d in combined.nodes(data=True)]
+        edges = [{"source": u, "target": v, **d} for u, v, d in combined.edges(data=True)]
+        return {"nodes": nodes, "edges": edges}
+
     def _load_cross_unit(self) -> nx.DiGraph:
         path = self._cross_unit_path()
         if path.exists():

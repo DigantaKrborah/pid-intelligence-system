@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 from backend.config import get_settings
-from backend.db.database import init_db
+from backend.db.database import init_db, get_session_factory
 from backend.api.routes import units, upload, search, graph, query
 
 
@@ -13,6 +13,11 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     logger.info(f"Starting P&ID Intelligence API [{settings.app_env}]")
     await init_db()
+    # Pre-load graphs; rebuild from DB if JSON files are missing
+    from backend.services.graph_service import ensure_all_graphs_loaded
+    factory = get_session_factory()
+    async with factory() as session:
+        await ensure_all_graphs_loaded(session)
     yield
     logger.info("Shutting down")
 

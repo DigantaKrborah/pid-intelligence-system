@@ -88,3 +88,98 @@ def test_cross_unit_connection(graph_builder):
     assert "P-101" in cross.nodes
     assert "V-201" in cross.nodes
     assert cross.has_edge("P-101", "V-201")
+
+
+# ── Impact analysis ────────────────────────────────────────────────────────────
+
+def test_impact_analysis_returns_downstream(graph_builder):
+    for tag, typ in [("P-101", "pump"), ("E-101", "exchanger"), ("T-101", "vessel"), ("P-201", "pump")]:
+        graph_builder.add_equipment("CDU", tag, typ)
+    graph_builder.add_connection("CDU", "P-101", "E-101")
+    graph_builder.add_connection("CDU", "E-101", "T-101")
+    graph_builder.add_connection("CDU", "T-101", "P-201")
+
+    result = graph_builder.get_impact_analysis("CDU", "P-101")
+    assert result["found"] is True
+    assert "E-101" in result["affected"]
+    assert "T-101" in result["affected"]
+    assert "P-201" in result["affected"]
+    assert result["affected_count"] == 3
+
+
+def test_impact_analysis_unknown_tag(graph_builder):
+    result = graph_builder.get_impact_analysis("CDU", "UNKNOWN-999")
+    assert result["found"] is False
+    assert result["affected"] == []
+    assert result["severity"] == "unknown"
+
+
+def test_impact_analysis_severity_low(graph_builder):
+    graph_builder.add_equipment("CDU", "P-101", "pump")
+    graph_builder.add_equipment("CDU", "V-101", "vessel")
+    graph_builder.add_connection("CDU", "P-101", "V-101")
+    result = graph_builder.get_impact_analysis("CDU", "P-101")
+    assert result["severity"] == "low"
+    assert result["affected_count"] == 1
+
+
+def test_impact_analysis_groups_by_type(graph_builder):
+    graph_builder.add_equipment("CDU", "P-101", "pump")
+    graph_builder.add_equipment("CDU", "P-102", "pump")
+    graph_builder.add_equipment("CDU", "V-101", "vessel")
+    graph_builder.add_connection("CDU", "P-101", "P-102")
+    graph_builder.add_connection("CDU", "P-101", "V-101")
+    result = graph_builder.get_impact_analysis("CDU", "P-101")
+    assert "pump" in result["affected_by_type"]
+    assert "vessel" in result["affected_by_type"]
+
+
+# ── Frontend format ────────────────────────────────────────────────────────────
+
+def test_get_frontend_format_structure(graph_builder):
+    graph_builder.add_equipment("CDU", "P-101", "pump")
+    graph_builder.add_equipment("CDU", "V-101", "vessel")
+    graph_builder.add_connection("CDU", "P-101", "V-101")
+
+    data = graph_builder.get_frontend_format("CDU")
+    assert "nodes" in data
+    assert "edges" in data
+    node_ids = [n["id"] for n in data["nodes"]]
+    assert "P-101" in node_ids
+    assert "V-101" in node_ids
+    assert len(data["edges"]) == 1
+    assert data["edges"][0]["source"] == "P-101"
+    assert data["edges"][0]["target"] == "V-101"
+
+
+# ── Rebuild from tags ──────────────────────────────────────────────────────────
+
+def test_rebuild_from_tags(graph_builder):
+    tags = [
+        {"tag": "P-101", "tag_type": "pump", "description": "Feed pump"},
+        {"tag": "V-101", "tag_type": "vessel", "description": "Feed drum"},
+    ]
+    connections = [
+        {"source": "P-101", "target": "V-101", "connection_type": "pipeline", "line_number": "4-CS-001"},
+    ]
+    graph_builder.rebuild_from_tags("CDU", tags, connections)
+
+    graph = graph_builder.load_or_create("CDU")
+    assert "P-101" in graph.nodes
+    assert "V-101" in graph.nodes
+    assert graph.has_edge("P-101", "V-101")
+
+
+# ── Cross-unit combined view ───────────────────────────────────────────────────
+
+def test_get_all_units_combined(graph_builder):
+    graph_builder.add_equipment("CDU", "P-101", "pump")
+    graph_builder.add_equipment("VDU", "V-201", "vessel")
+    graph_builder.add_cross_unit_connection("P-101", "CDU", "V-201", "VDU")
+
+    combined = graph_builder.get_all_units_combined()
+    node_ids = [n["id"] for n in combined["nodes"]]
+    assert "P-101" in node_ids
+    assert "V-201" in node_ids
+    cross_edges = [e for e in combined["edges"] if e.get("cross_unit")]
+    assert len(cross_edges) == 1
