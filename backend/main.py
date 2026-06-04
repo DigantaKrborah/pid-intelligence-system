@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 from backend.config import get_settings
+from backend.db.database import init_db
 from backend.api.routes import units, upload, search, graph, query
 
 
@@ -11,6 +12,7 @@ from backend.api.routes import units, upload, search, graph, query
 async def lifespan(app: FastAPI):
     settings = get_settings()
     logger.info(f"Starting P&ID Intelligence API [{settings.app_env}]")
+    await init_db()
     yield
     logger.info("Shutting down")
 
