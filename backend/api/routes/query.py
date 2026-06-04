@@ -1,4 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.db.database import get_db
+from backend.db.repositories.unit_repo import UnitRepository
 from backend.models.query import NLQueryRequest, NLQueryResponse, BugReportRequest
 from backend.agents.coordinator import CoordinatorAgent
 from backend.graph.builder import GraphBuilder
@@ -12,25 +16,31 @@ _agent = CoordinatorAgent(_graph, _rag)
 
 
 @router.post("/nl", response_model=NLQueryResponse)
-async def natural_language_query(payload: NLQueryRequest):
+async def natural_language_query(
+    payload: NLQueryRequest,
+    db: AsyncSession = Depends(get_db),
+):
     """Answer a natural language engineering question about the selected unit."""
-    unit_name = "UNKNOWN"  # TODO: resolve unit_id → unit_name from DB
     if payload.unit_id is None:
         return NLQueryResponse(
             answer="Please select a unit before asking a question.",
             query_type="error",
         )
 
+    unit = await UnitRepository(db).get_by_id(payload.unit_id)
+    if not unit:
+        raise HTTPException(status_code=404, detail="Unit not found")
+
     result = _agent.run(
         question=payload.question,
-        unit_name=unit_name,
+        unit_name=unit.name,
         chat_history=payload.chat_history,
     )
 
     return NLQueryResponse(
         answer=result["answer"],
         query_type="general",
-        unit_context=unit_name,
+        unit_context=unit.name,
     )
 
 

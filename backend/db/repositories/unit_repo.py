@@ -1,8 +1,9 @@
 import uuid
+from datetime import datetime
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.models import Unit, PIDDocument, EquipmentTag
+from backend.db.models import Unit, PIDDocument, EquipmentTag, EngineeringDocument
 
 
 class UnitRepository:
@@ -51,3 +52,15 @@ class UnitRepository:
             select(func.count(PIDDocument.id)).where(PIDDocument.unit_id == unit_id)
         )
         return {"tag_count": tag_count or 0, "document_count": doc_count or 0}
+
+    async def get_sop_count(self, unit_id: uuid.UUID) -> int:
+        count = await self.session.scalar(
+            select(func.count(EngineeringDocument.id)).where(EngineeringDocument.unit_id == unit_id)
+        )
+        return count or 0
+
+    async def get_last_upload(self, unit_id: uuid.UUID) -> datetime | None:
+        result = await self.session.scalar(
+            select(func.max(PIDDocument.uploaded_at)).where(PIDDocument.unit_id == unit_id)
+        )
+        return result

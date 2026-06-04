@@ -70,13 +70,16 @@ async def get_unit(unit_id: UUID, db: AsyncSession = Depends(get_db)):
     stats = await repo.get_stats(unit_id)
     graph_stats = _graph.get_graph_stats(unit.name)
 
+    sop_count = await repo.get_sop_count(unit_id)
+    last_upload = await repo.get_last_upload(unit_id)
+
     return UnitStats(
         unit_id=unit.id,
         unit_name=unit.name,
         total_tags=stats["tag_count"],
         total_documents=stats["document_count"],
-        total_sop_documents=0,
-        last_upload=None,
+        total_sop_documents=sop_count,
+        last_upload=last_upload,
         graph_node_count=graph_stats["nodes"],
         graph_edge_count=graph_stats["edges"],
     )
@@ -84,8 +87,12 @@ async def get_unit(unit_id: UUID, db: AsyncSession = Depends(get_db)):
 
 @router.delete("/{unit_id}", status_code=204)
 async def archive_unit(unit_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Archive a unit (soft delete)."""
+    """Archive a unit (soft delete) and clean up ChromaDB collections."""
     repo = UnitRepository(db)
-    success = await repo.archive(unit_id)
-    if not success:
+    unit = await repo.get_by_id(unit_id)
+    if not unit:
         raise HTTPException(status_code=404, detail="Unit not found")
+    await repo.archive(unit_id)
+    # Clean up vector store collections for this unit
+    from backend.rag.engine import RAGEngine
+    RAGEngine().delete_unit_collections(unit.name)
