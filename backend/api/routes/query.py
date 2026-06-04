@@ -31,15 +31,18 @@ async def natural_language_query(
     if not unit:
         raise HTTPException(status_code=404, detail="Unit not found")
 
-    result = _agent.run(
-        question=payload.question,
-        unit_name=unit.name,
-        chat_history=payload.chat_history,
+    import asyncio
+    result = await asyncio.to_thread(
+        _agent.run,
+        payload.question,
+        unit.name,
+        payload.chat_history,
     )
 
     return NLQueryResponse(
         answer=result["answer"],
-        query_type="general",
+        query_type=result.get("query_type", "general"),
+        sources=result.get("sources", []),
         unit_context=unit.name,
     )
 
