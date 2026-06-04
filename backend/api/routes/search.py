@@ -5,7 +5,8 @@ from uuid import UUID
 from typing import Optional
 
 from backend.db.database import get_db
-from backend.db.models import EquipmentTag, Unit
+from backend.db.models import EquipmentTag, Unit, EngineeringDocument
+from backend.db.repositories.sop_repo import SOPRepository
 from backend.graph.builder import GraphBuilder
 from backend.models.equipment import TagSearchResult, EquipmentTagResponse
 
@@ -146,3 +147,70 @@ async def _semantic_search(
 
     results.sort(key=lambda r: r.score, reverse=True)
     return results[:limit]
+
+
+# ── Document endpoints ─────────────────────────────────────────────────────────
+
+@router.get("/documents")
+async def list_documents(
+    unit_id: Optional[UUID] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all indexed SOP/manual documents, optionally filtered by unit."""
+    sop_repo = SOPRepository(db)
+    docs = await sop_repo.list_by_unit(unit_id) if unit_id else await sop_repo.list_all()
+    return [
+        {
+            "id": str(d.id),
+            "title": d.title,
+            "filename": d.filename,
+            "doc_type": d.doc_type,
+            "unit_id": str(d.unit_id) if d.unit_id else None,
+            "page_count": d.page_count,
+            "indexed": d.indexed,
+            "chunk_count": d.chunk_count,
+            "uploaded_at": d.uploaded_at.isoformat(),
+        }
+        for d in docs
+    ]
+
+
+@router.get("/documents/search")
+async def search_documents(
+    q: str = Query(..., min_length=1),
+    unit_id: Optional[UUID] = Query(None),
+    n_results: int = Query(5, le=20),
+    db: AsyncSession = Depends(get_db),
+):
+    """Semantic search over indexed SOP and manual documents."""
+    if unit_id:
+        result = await db.execute(select(Unit).where(Unit.id == unit_id))
+        unit = result.scalar_one_or_none()
+        unit_names = [unit.name] if unit else []
+    else:
+        result = await db.execute(select(Unit).where(Unit.status == "active"))
+        unit_names = [u.name for u in result.scalars().all()]
+
+    from backend.rag.engine import RAGEngine
+    rag = RAGEngine()
+    all_results = []
+
+    for unit_name in unit_names:
+        hits = rag.search_documents(q, unit_name, n_results=n_results)
+        for hit in hits:
+            all_results.append({
+                "content": hit["content"],
+                "source": hit["source"],
+                "page": hit.get("page"),
+                "unit": unit_name,
+            })
+
+    return {"query": q, "results": all_results}
+
+
+@router.get("/stats/{unit_name}")
+async def get_index_stats(unit_name: str):
+    """Return ChromaDB collection stats for a unit (equipment + doc chunks indexed)."""
+    from backend.rag.engine import RAGEngine
+    rag = RAGEngine()
+    return rag.get_collection_stats(unit_name)

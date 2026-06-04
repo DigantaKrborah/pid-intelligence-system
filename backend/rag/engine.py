@@ -91,3 +91,23 @@ class RAGEngine:
         for doc, meta in zip(results["documents"][0], results["metadatas"][0]):
             items.append({"content": doc, "source": meta.get("source", ""), "page": meta.get("page")})
         return items
+
+    def get_collection_stats(self, unit_name: str) -> dict:
+        """Return count of indexed items per collection for a unit."""
+        equip_col = self._get_or_create(self._collection_name(unit_name, "equipment"))
+        docs_col = self._get_or_create(self._collection_name(unit_name, "docs"))
+        return {
+            "unit": unit_name,
+            "equipment_indexed": equip_col.count(),
+            "doc_chunks_indexed": docs_col.count(),
+        }
+
+    def delete_unit_collections(self, unit_name: str) -> None:
+        """Remove all ChromaDB collections for a unit (called on archive)."""
+        for kind in ("equipment", "docs"):
+            name = self._collection_name(unit_name, kind)
+            try:
+                self.client.delete_collection(name)
+                logger.info(f"Deleted ChromaDB collection: {name}")
+            except Exception:
+                pass  # Collection may not exist yet

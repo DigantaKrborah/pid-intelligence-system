@@ -9,7 +9,9 @@ from backend.config import get_settings
 from backend.db.database import get_db
 from backend.db.repositories.unit_repo import UnitRepository
 from backend.db.repositories.document_repo import DocumentRepository
+from backend.db.repositories.sop_repo import SOPRepository
 from backend.services.processing import process_pid_document
+from backend.services.sop_processor import process_sop_document
 
 router = APIRouter()
 
@@ -74,16 +76,22 @@ async def upload_pid(
 
 @router.post("/document")
 async def upload_document(
+    background_tasks: BackgroundTasks,
     unit_id: UUID = Form(...),
     doc_type: str = Form(...),
     file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Upload a SOP or manual PDF/DOCX for a unit."""
+    """Upload a SOP or manual PDF/DOCX for a unit. Text indexing runs in background."""
     settings = get_settings()
-    allowed = {".pdf", ".docx"}
     suffix = Path(file.filename).suffix.lower()
-    if suffix not in allowed:
+    if suffix not in {".pdf", ".docx"}:
         raise HTTPException(status_code=400, detail="Only PDF and DOCX supported")
+
+    unit_repo = UnitRepository(db)
+    unit = await unit_repo.get_by_id(unit_id)
+    if not unit:
+        raise HTTPException(status_code=404, detail="Unit not found")
 
     dest = Path(settings.manuals_dir) / str(unit_id) / file.filename
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -91,7 +99,28 @@ async def upload_document(
     async with aiofiles.open(dest, "wb") as out:
         await out.write(await file.read())
 
-    return {"filename": file.filename, "doc_type": doc_type, "status": "queued"}
+    # Create DB record
+    sop_repo = SOPRepository(db)
+    doc = await sop_repo.create(
+        unit_id=unit_id,
+        filename=file.filename,
+        file_path=str(dest),
+        doc_type=doc_type,
+        title=Path(file.filename).stem.replace("_", " ").replace("-", " ").title(),
+    )
+    await db.commit()
+
+    # Queue background indexing
+    background_tasks.add_task(process_sop_document, doc.id, unit.name)
+
+    logger.info(f"Queued SOP indexing: {file.filename} (doc_id={doc.id}) for unit {unit.name}")
+    return {
+        "filename": file.filename,
+        "document_id": str(doc.id),
+        "doc_type": doc_type,
+        "unit": unit.name,
+        "status": "queued",
+    }
 
 
 @router.get("/status/{document_id}")
