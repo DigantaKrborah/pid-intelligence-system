@@ -1,0 +1,49 @@
+[tool.pytest.ini_options]
+testpaths        = ["tests"]
+asyncio_mode     = "auto"
+addopts          = "-v --tb=short --strict-markers"
+markers          = [
+    "integration: marks tests that require Docker services (deselect with -m 'not integration')",
+    "slow: marks tests that are slow",
+]
+filterwarnings   = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.coverage.run]
+source    = ["backend"]
+omit      = [
+    "backend/db/models.py",      # pure ORM declarations
+    "backend/config.py",         # settings — trivially covered
+    "*/__init__.py",
+]
+branch    = true
+
+[tool.coverage.report]
+fail_under   = 70
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+
+[tool.ruff]
+line-length    = 100
+target-version = "py311"
+select         = ["E", "F", "I", "UP", "B", "SIM"]
+ignore         = [
+    "E501",   # line too long — handled by black
+    "B008",   # do not perform function calls in default arguments (FastAPI Depends pattern)
+    "SIM108", # ternary — readability preference
+]
+exclude        = ["tests/", "docker/"]
+
+[tool.ruff.per-file-ignores]
+"backend/api/routes/*.py" = ["B006"]
+
+[tool.black]
+line-length    = 100
+target-version = ["py311"]

@@ -58,7 +58,7 @@ Guidelines:
 
 _LIST_PATTERNS    = re.compile(r"\b(list|all|show|how many|count|what .* in)\b", re.I)
 _PATH_PATTERNS    = re.compile(r"\b(path|route|from .* to|trace|flow)\b", re.I)
-_IMPACT_PATTERNS  = re.compile(r"\b(impact|fail|isolat|trip|what happen|affect|downstream of)\b", re.I)
+_IMPACT_PATTERNS  = re.compile(r"\b(impact|fail|isolat|trip|affect)\b|what happens?|downstream of", re.I)
 _SOP_PATTERNS     = re.compile(r"\b(sop|procedure|manual|how to|startup|shutdown|isolation|step)\b", re.I)
 _DETAIL_PATTERNS  = re.compile(r"\b(what is|tell me about|describe|detail|info|about)\b", re.I)
 

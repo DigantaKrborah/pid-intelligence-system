@@ -65,13 +65,14 @@ def test_chunk_text_page_estimates_are_positive():
 # ── PDF extraction ─────────────────────────────────────────────────────────────
 
 def test_extract_text_from_pdf_mock(tmp_path):
-    """extract_text_from_pdf calls pypdf — mocked here."""
+    """extract_text_from_pdf calls pypdf.PdfReader — patch at source module."""
     import unittest.mock as mock
 
     fake_page = mock.MagicMock()
     fake_page.extract_text.return_value = "CDU feed pump P-101 isolation procedure."
 
-    with mock.patch("backend.services.sop_processor.PdfReader") as mock_reader:
+    # PdfReader is imported inside the function body, so patch the source module
+    with mock.patch("pypdf.PdfReader") as mock_reader:
         mock_reader.return_value.pages = [fake_page, fake_page]
         text, pages = extract_text_from_pdf(str(tmp_path / "test.pdf"))
 
@@ -80,13 +81,14 @@ def test_extract_text_from_pdf_mock(tmp_path):
 
 
 def test_extract_text_from_docx_mock(tmp_path):
-    """extract_text_from_docx calls python-docx — mocked here."""
+    """extract_text_from_docx calls python-docx Document — patch at source module."""
     import unittest.mock as mock
 
     fake_para = mock.MagicMock()
     fake_para.text = "Startup checklist for VDU vacuum system."
 
-    with mock.patch("backend.services.sop_processor.Document") as mock_doc:
+    # Document is imported inside the function body, so patch the source module
+    with mock.patch("docx.Document") as mock_doc:
         mock_doc.return_value.paragraphs = [fake_para]
         text, pages = extract_text_from_docx(str(tmp_path / "test.docx"))
 
