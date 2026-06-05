@@ -106,17 +106,26 @@ def _gather_context(
                         f"  Upstream: {result['upstream'] or 'none'}\n"
                         f"  Downstream: {result['downstream'] or 'none'}"
                     )
-                    # Try to get provenance
                     prov = pid_agent.get_tag_provenance(tag, unit_name)
                     if prov.get("found"):
-                        src = prov.get("source_document", "")
+                        src  = prov.get("source_document", "")
                         page = prov.get("page_number", "?")
                         lines.append(f"  Source: {src} page {page}")
                         sources.append({"source": src, "page": str(page)})
                 else:
-                    lines.append(f"Tag '{tag}' not found in unit {unit_name}.")
+                    # Give a helpful explanation with what IS available
+                    all_tags = graph_agent.get_all_tags()
+                    tag_count = all_tags.get("stats", {}).get("nodes", 0)
+                    sheets = pid_agent.list_pid_sheets(unit_name)
+                    sheet_count = sheets.get("sheet_count", 0)
+                    lines.append(
+                        f"Tag '{tag}' is NOT in the current knowledge graph for unit {unit_name}.\n"
+                        f"  Currently indexed: {tag_count} tags from {sheet_count} P&ID sheets.\n"
+                        f"  This tag may be on a P&ID sheet that has not been uploaded yet.\n"
+                        f"  ACTION: Upload the P&ID sheet containing '{tag}' via the Upload P&IDs page."
+                    )
         else:
-            lines.append(f"Please specify a tag name (e.g. P-101, TIC-301).")
+            lines.append(f"Please specify a tag name (e.g. P-101, 04-VV-002, PV-7201B).")
 
     elif query_type == "path":
         if len(tags_in_question) >= 2:
@@ -156,9 +165,15 @@ def _gather_context(
                     + "\n".join(impact_lines)
                 )
             else:
-                lines.append(f"Tag '{tag}' not found in unit {unit_name}.")
+                all_tags = graph_agent.get_all_tags()
+                tag_count = all_tags.get("stats", {}).get("nodes", 0)
+                lines.append(
+                    f"Tag '{tag}' is NOT in the current knowledge graph for {unit_name} "
+                    f"({tag_count} tags indexed).\n"
+                    f"  Upload the P&ID sheet containing '{tag}' to enable impact analysis."
+                )
         else:
-            lines.append("Please specify a tag name for impact analysis (e.g. 'impact of P-101 failing').")
+            lines.append("Please specify a tag name for impact analysis (e.g. 'impact of PV-7201B failing').")
 
     elif query_type == "sop":
         result = doc_agent.search_sop(question, n_results=3)
@@ -184,6 +199,17 @@ def _gather_context(
                         f"{result['tag']} ({result['tag_type']}): {result['description']}\n"
                         f"  Upstream: {result['upstream'] or 'none'}\n"
                         f"  Downstream: {result['downstream'] or 'none'}"
+                    )
+                else:
+                    all_tags = graph_agent.get_all_tags()
+                    tag_count = all_tags.get("stats", {}).get("nodes", 0)
+                    sheets = pid_agent.list_pid_sheets(unit_name)
+                    sheet_names = [s["filename"] for s in sheets.get("sheets", [])[:4]]
+                    lines.append(
+                        f"Tag '{tag}' is NOT in the current knowledge graph.\n"
+                        f"  Unit {unit_name} has {tag_count} tags from {sheets.get('sheet_count',0)} sheets: "
+                        f"{', '.join(sheet_names) or 'none uploaded yet'}.\n"
+                        f"  To find '{tag}', upload the P&ID sheet that contains it."
                     )
         else:
             # Semantic search over equipment descriptions

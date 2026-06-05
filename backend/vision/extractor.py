@@ -23,21 +23,80 @@ _TAG_PAT = re.compile(
     r'|[A-Z]{1,5}-\d{2,4}[A-Z]?)\b'              # P-101 / E-172B style
 )
 
-# Equipment type mapping from tag prefix
+# Equipment type mapping from tag prefix — only KNOWN equipment prefixes
 _TYPE_MAP = {
-    "P":   "pump",       "CP":  "pump",       "PP":  "pump",
-    "V":   "vessel",     "VV":  "vessel",     "T":   "vessel",
-    "TK":  "vessel",     "D":   "vessel",     "DR":  "vessel",
-    "E":   "exchanger",  "HE":  "exchanger",  "AE":  "exchanger",
-    "C":   "compressor", "K":   "compressor",
-    "FCV": "valve",      "LV":  "valve",      "PCV": "valve",
-    "HV":  "valve",      "XV":  "valve",      "SDV": "valve",
-    "FIC": "instrument", "LIC": "instrument", "PIC": "instrument",
-    "TIC": "instrument", "FT":  "instrument", "LT":  "instrument",
-    "PT":  "instrument", "TT":  "instrument", "AT":  "instrument",
-    "FE":  "instrument", "TE":  "instrument", "PE":  "instrument",
-    "H":   "heater",     "F":   "heater",     "B":   "heater",
+    # Pumps
+    "P": "pump",  "CP": "pump",  "PP": "pump",  "GP": "pump",
+    # Vessels / drums / columns
+    "V": "vessel",  "VV": "vessel",  "T": "vessel",  "TK": "vessel",
+    "D": "vessel",  "DR": "vessel",  "KO": "vessel",  "FA": "vessel",
+    # Exchangers / coolers
+    "E": "exchanger",  "HE": "exchanger",  "AE": "exchanger",
+    "EA": "exchanger",  "EE": "exchanger",  "AC": "exchanger",
+    # Compressors / turbines
+    "C": "compressor",  "K": "compressor",  "KA": "compressor",
+    "PT": "compressor",  "GT": "compressor",
+    # Valves
+    "FCV": "valve",  "LV": "valve",  "PCV": "valve",  "PV": "valve",
+    "HV": "valve",   "XV": "valve",  "SDV": "valve",  "TV": "valve",
+    "FV": "valve",   "BV": "valve",  "MOV": "valve",  "PSV": "valve",
+    "PRV": "valve",  "CV": "valve",  "TCV": "valve",  "LCV": "valve",
+    # Instruments / transmitters / indicators
+    "FIC": "instrument",  "LIC": "instrument",  "PIC": "instrument",
+    "TIC": "instrument",  "FT":  "instrument",  "LT":  "instrument",
+    "PT":  "instrument",  "TT":  "instrument",  "AT":  "instrument",
+    "FE":  "instrument",  "TE":  "instrument",  "PE":  "instrument",
+    "FI":  "instrument",  "LI":  "instrument",  "PI":  "instrument",
+    "TI":  "instrument",  "AI":  "instrument",  "FQ":  "instrument",
+    "FS":  "instrument",  "LS":  "instrument",  "PS":  "instrument",
+    "TS":  "instrument",  "FC":  "instrument",  "LC":  "instrument",
+    "PC":  "instrument",  "TC":  "instrument",  "FR":  "instrument",
+    # Heaters / furnaces
+    "H": "heater",  "F": "heater",  "B": "heater",  "HF": "heater",
+    # Filters / strainers
+    "FL": "other",  "STR": "other",
+    # Mixers / agitators
+    "MX": "other",  "AG": "other",
+    # Lines
+    "L": "line",
 }
+
+# Noise prefixes to reject — drawing labels, notes, utility codes
+_NOISE_PREFIXES = {
+    "NOTE", "WCR", "WCS", "WDM", "WDN", "WOR", "WP", "SL",
+    "OS", "PHE", "BTL", "GPL", "QAKFL", "CEWCR", "TOKA", "TOW",
+    "CBD", "BEP", "ASP", "RF", "DE", "CC", "M", "RI", "GN",
+    "SP", "RE", "VS", "RS", "PB", "RT",
+}
+
+
+def _is_valid_equipment_tag(tag: str) -> bool:
+    """Return True only if the tag looks like a real equipment tag, not a drawing annotation."""
+    parts = tag.split("-")
+
+    # Area-format: 04-VV-002 — middle part must be a known type
+    if len(parts) == 3 and parts[0].isdigit():
+        prefix = parts[1].upper()
+        return prefix in _TYPE_MAP
+
+    # Standard format: P-101, FCV-001, E-172B
+    if len(parts) >= 2:
+        prefix = parts[0].upper()
+        if prefix in _NOISE_PREFIXES:
+            return False
+        # Accept if it's a known type OR looks like an equipment tag (2-3 letters + numbers)
+        if prefix in _TYPE_MAP:
+            return True
+        # Reject if prefix is a single digit or all-lowercase
+        if len(prefix) <= 1 or not prefix[0].isalpha():
+            return False
+        # Reject long noise prefixes (5+ chars) not in type map
+        if len(prefix) > 4:
+            return False
+        # Accept short unknown prefixes (could be plant-specific)
+        return True
+
+    return False
 
 EXTRACTION_PROMPT = """You are an expert P&ID (Piping & Instrumentation Diagram) analyser.
 
@@ -164,9 +223,13 @@ class PIDExtractor:
 
             logger.debug(f"OCR raw text ({image_path.name}): {ocr_text[:300]}")
 
-            # Extract tags from OCR text
-            found_tags = list(set(_TAG_PAT.findall(ocr_text.upper())))
-            found_tags = [t for t in found_tags if len(t) >= 4]  # filter noise
+            # Extract tags from OCR text — apply equipment tag filter
+            raw_tags  = list(set(_TAG_PAT.findall(ocr_text.upper())))
+            found_tags = [
+                t for t in raw_tags
+                if len(t) >= 4 and _is_valid_equipment_tag(t)
+            ]
+            logger.debug(f"OCR raw={len(raw_tags)}, after filter={len(found_tags)}: {found_tags}")
 
             tags = [
                 {
