@@ -24,6 +24,11 @@ graph_data = get_graph(unit_name, include_cross_unit=cross_unit)
 nodes_raw  = graph_data.get("nodes", [])
 edges_raw  = graph_data.get("edges", [])
 
+def _label_color(hex_color: str) -> str:
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return "#1E2130" if (0.299 * r + 0.587 * g + 0.114 * b) > 150 else "#FFFFFF"
+
 nodes, edges = [], []
 for n in nodes_raw:
     tag      = n.get("id", "")
@@ -34,6 +39,7 @@ for n in nodes_raw:
     nodes.append(Node(
         id=tag, label=tag, size=size, color=colour,
         borderWidth=3 if (tag == highlight or is_cross) else 1,
+        font={"color": _label_color(colour), "size": 12},
     ))
 
 for e in edges_raw:
@@ -80,14 +86,14 @@ with col_detail:
 
         if nb.get("upstream"):
             st.markdown(
-                '<div style="font-size:11px;color:#94A3B8;margin-bottom:4px">⬆️ Upstream</div>'
-                + "".join(tag_chip(t) for t in nb["upstream"][:8]),
+                '<div style="font-size:11px;font-weight:600;color:#475569;margin-bottom:4px">⬆️ Upstream</div>'
+                + "".join(tag_chip(t, "#DC2626") for t in nb["upstream"][:8]),
                 unsafe_allow_html=True,
             )
         if nb.get("downstream"):
             st.markdown(
-                '<div style="font-size:11px;color:#94A3B8;margin:8px 0 4px">⬇️ Downstream</div>'
-                + "".join(tag_chip(t) for t in nb["downstream"][:8]),
+                '<div style="font-size:11px;font-weight:600;color:#475569;margin:8px 0 4px">⬇️ Downstream</div>'
+                + "".join(tag_chip(t, "#DC2626") for t in nb["downstream"][:8]),
                 unsafe_allow_html=True,
             )
         if not nb.get("upstream") and not nb.get("downstream"):
@@ -98,7 +104,7 @@ with col_detail:
         if impact and impact.get("found"):
             st.markdown(
                 f'<div style="margin-bottom:4px">{severity_badge(impact["severity"])}</div>'
-                f'<div style="font-size:12px;color:#94A3B8">{impact["affected_count"]} affected downstream</div>',
+                f'<div style="font-size:12px;color:#475569;font-weight:500">{impact["affected_count"]} affected downstream</div>',
                 unsafe_allow_html=True,
             )
 
@@ -118,8 +124,8 @@ with col_detail:
                     unsafe_allow_html=True,
                 )
         st.markdown(
-            '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:11px;color:#94A3B8">'
-            '<span style="display:inline-block;width:20px;border-top:2px dashed #F97316"></span>Cross-unit link</div>',
+            '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:11px;color:#475569">'
+            '<span style="display:inline-block;width:20px;border-top:2px dashed #EA580C"></span>Cross-unit link</div>',
             unsafe_allow_html=True,
         )
         st.info("Click a node in the graph to inspect it.")

@@ -284,18 +284,23 @@ class CoordinatorAgent:
             f"Data from P&ID knowledge graph:\n{context}"
         ))
 
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+        _pool = ThreadPoolExecutor(max_workers=1)
         try:
-            llm      = self._get_llm()
-            response = llm.invoke([system_msg, user_msg])
-            answer   = response.content.strip()
-
+            llm = self._get_llm()
+            future = _pool.submit(llm.invoke, [system_msg, user_msg])
+            response = future.result(timeout=50)
+            answer = response.content.strip()
             # Strip Qwen3 thinking tags if present (<think>...</think>)
             answer = re.sub(r"<think>.*?</think>", "", answer, flags=re.DOTALL).strip()
-
+        except FuturesTimeout:
+            logger.warning("LLM formatting timed out after 50s, returning raw data")
+            answer = f"**{unit_name} — {query_type.title()} Query**\n\n{context}"
         except Exception as exc:
             logger.warning(f"LLM formatting failed ({exc}), returning raw data")
-            # Fallback: return the raw gathered data without LLM formatting
             answer = f"**{unit_name} — {query_type.title()} Query**\n\n{context}"
+        finally:
+            _pool.shutdown(wait=False)
 
         return {
             "answer":     answer,

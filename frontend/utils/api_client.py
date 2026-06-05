@@ -189,7 +189,7 @@ def nl_query(question: str, unit_id: str, chat_history: list[dict]) -> dict:
     )
     if status == 200:
         return data
-    return {"answer": f"Backend error ({status}): {data.get('detail', 'Unknown')}", "query_type": "error", "sources": []}
+    return {"answer": f"Backend error ({status}): {data.get('detail', data.get('error', 'Unknown'))}", "query_type": "error", "sources": []}
 
 
 def report_bug(component: str, description: str, steps: str, severity: str,
