@@ -180,18 +180,84 @@ def _clean_description(raw: str) -> str:
     return ""
 
 
-def _extract_descriptions_from_ocr(tags: list[str], ocr_text: str) -> dict[str, str]:
+def _extract_descriptions_from_ocr_image(tags: list[str], image) -> dict[str, str]:
     """
-    For each tag, find the nearest descriptive text line in the OCR output.
-    OCR output tends to have: tag on its own line, description on the next line.
+    Use Tesseract bounding-box data to find text on the SAME horizontal row as each tag.
+    P&ID callout blocks have: [TAG]  [DESCRIPTION] on the same line.
     Returns {tag: description}.
     """
+    import pytesseract
+    import pandas as pd
+
+    try:
+        data = pytesseract.image_to_data(
+            image, config="--psm 6 --oem 3", output_type=pytesseract.Output.DATAFRAME
+        )
+        data = data[data["conf"] > 30].dropna(subset=["text"])
+        data["text"] = data["text"].str.strip()
+        data = data[data["text"].str.len() > 0]
+    except Exception:
+        return {}
+
+    descriptions: dict[str, str] = {}
+
+    for tag in tags:
+        tag_upper = tag.upper()
+        # Find the row(s) containing this tag
+        tag_rows = data[data["text"].str.upper().str.contains(re.escape(tag_upper), na=False)]
+        if tag_rows.empty:
+            # Try partial match (OCR may split the tag)
+            parts = tag.split("-")
+            for part in parts:
+                if len(part) >= 3:
+                    tag_rows = data[data["text"].str.upper().str.contains(re.escape(part), na=False)]
+                    if not tag_rows.empty:
+                        break
+
+        if tag_rows.empty:
+            continue
+
+        tag_row = tag_rows.iloc[0]
+        tag_y    = tag_row["top"]
+        tag_x    = tag_row["left"]
+        tag_h    = tag_row.get("height", 20)
+        y_tol    = max(tag_h * 1.5, 20)  # generous y tolerance
+
+        # Find all words on the same horizontal band
+        same_row = data[
+            (data["top"].between(tag_y - y_tol, tag_y + y_tol)) &
+            (data["left"] > tag_x + 10)   # must be to the RIGHT of the tag
+        ].sort_values("left")
+
+        if same_row.empty:
+            continue
+
+        # Join words into a description candidate
+        words = same_row["text"].tolist()
+        candidate = " ".join(str(w) for w in words if str(w).strip())
+
+        # Filter out if it's another tag
+        if _TAG_PAT.search(candidate.upper()):
+            # Only use the non-tag words
+            non_tag_words = [w for w in words if not _TAG_PAT.search(str(w).upper())]
+            candidate = " ".join(non_tag_words)
+
+        desc = _clean_description(candidate.upper()) if candidate.strip() else ""
+        if desc and len(desc) >= 4:
+            descriptions[tag] = desc
+
+    return descriptions
+
+
+def _extract_descriptions_from_ocr(tags: list[str], ocr_text: str) -> dict[str, str]:
+    """
+    Fallback: scan OCR text lines for descriptions near tags.
+    Used when image object not available.
+    """
     lines = [ln.strip() for ln in ocr_text.split("\n") if ln.strip()]
-    tag_set = set(t.upper() for t in tags)
     descriptions: dict[str, str] = {}
 
     for i, line in enumerate(lines):
-        # Check if this line IS a tag
         line_upper = line.upper()
         matched_tag = None
         for tag in tags:
@@ -201,20 +267,17 @@ def _extract_descriptions_from_ocr(tags: list[str], ocr_text: str) -> dict[str, 
         if not matched_tag:
             continue
 
-        # Look at the next few lines for a description
-        for offset in range(1, 5):
+        for offset in range(1, 6):
             idx = i + offset
             if idx >= len(lines):
                 break
             candidate = lines[idx].strip()
-            # Skip if empty, another tag, or revision markers (single letter/number)
-            if not candidate or len(candidate) <= 2:
+            if not candidate or len(candidate) <= 3:
                 continue
             if any(t.upper() == candidate.upper() for t in tags):
-                break   # Hit another tag — stop
-            if re.match(r'^[A-Z]$|^\d+$|^NOTES?$|^REV\b', candidate):
+                break
+            if re.match(r'^[A-Z]$|^\d+$|^NOTES?$', candidate):
                 continue
-
             desc = _clean_description(candidate)
             if desc:
                 descriptions[matched_tag] = desc
@@ -344,8 +407,8 @@ class PIDExtractor:
             if not found_tags:
                 return {"tags": [], "sheet_number": "", "process_description": ""}
 
-            # ── Step 2: use qwen3:8b to extract descriptions + connections from OCR text ──
-            enriched_tags = self._enrich_with_llm(found_tags, combined_text, image_path.name)
+            # ── Step 2: rule-based enrichment using bounding-box layout ──
+            enriched_tags = self._enrich_with_llm(found_tags, combined_text, image_path.name, img)
 
             logger.info(f"OCR+LLM extracted {len(enriched_tags)} tags from {image_path.name}")
             return {
@@ -358,14 +421,25 @@ class PIDExtractor:
             logger.error(f"OCR failed for {image_path.name}: {e}")
             return {"tags": [], "sheet_number": "", "process_description": ""}
 
-    def _enrich_with_llm(self, found_tags: list[str], ocr_text: str, filename: str) -> list[dict]:
+    def _enrich_with_llm(self, found_tags: list[str], ocr_text: str, filename: str, image=None) -> list[dict]:
         """
-        Extract tag descriptions and infer connections using rule-based text association.
-        Reads the OCR output to find the nearest descriptive text line for each tag.
-        No LLM call — instant and reliable.
+        Extract tag descriptions using bounding-box layout analysis (primary)
+        with text-line fallback. Infers connections from area-prefix grouping.
+        No LLM call required.
         """
-        descriptions = _extract_descriptions_from_ocr(found_tags, ocr_text)
-        connections  = _infer_connections_from_sheet(found_tags)
+        # Primary: bounding-box same-row matching
+        if image is not None:
+            descriptions = _extract_descriptions_from_ocr_image(found_tags, image)
+        else:
+            descriptions = {}
+
+        # Fallback: line-proximity text matching for any tags still missing
+        missing = [t for t in found_tags if t not in descriptions]
+        if missing:
+            fallback = _extract_descriptions_from_ocr(missing, ocr_text)
+            descriptions.update(fallback)
+
+        connections = _infer_connections_from_sheet(found_tags)
 
         result = []
         for tag in found_tags:
