@@ -26,7 +26,14 @@ from backend.agents.incident_agent import IncidentAgent
 from backend.agents.pid_agent import PIDAgent
 
 # ── Tag extractor ──────────────────────────────────────────────────────────────
-_TAG_RE = re.compile(r'\b[A-Z]{1,4}-\d{2,4}\b')
+# Matches both formats:
+#   Standard ISA  : P-101, TIC-301, FCV-101A
+#   Area-type-seq : 04-VV-002, 04-P-001, 04-TIC-001
+_TAG_RE = re.compile(
+    r'\b(?:\d{2,4}-[A-Z]{1,5}-\d{2,4}[A-Z]?'   # 04-VV-002 style
+    r'|[A-Z]{1,5}-\d{2,4}[A-Z]?)\b',             # P-101 style
+    re.IGNORECASE,
+)
 
 # ── Query type classifier ──────────────────────────────────────────────────────
 _LIST_PAT   = re.compile(r"\b(list|all|show|how many|count|what .{0,20} in)\b", re.I)

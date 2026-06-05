@@ -17,23 +17,29 @@ EXTRACTION_PROMPT = """You are an expert P&ID (Piping & Instrumentation Diagram)
 
 Analyse this P&ID drawing and extract ALL equipment and instrument tags visible.
 
+Tag formats vary by plant — common formats include:
+  - Standard ISA:    P-101, TIC-301, V-201, FCV-101, E-101
+  - Area-type-seq:   04-VV-002, 04-P-001, 04-TIC-001, 12-E-005
+  - With suffix:     P-101A, 04-VV-002B
+
 For each tag return:
-- tag: identifier like P-101, TIC-301, V-201, FCV-101, E-101, C-101
+- tag: the EXACT tag identifier as printed on the drawing
 - tag_type: pump | vessel | valve | instrument | exchanger | compressor | line | heater | other
-- description: brief description
+- description: brief description of the equipment
 - connected_to: list of directly connected tags (max 10)
 - line_number: pipe line number if visible
 
 Return ONLY valid JSON:
 {
   "tags": [
-    {"tag": "P-101", "tag_type": "pump", "description": "Feed pump", "connected_to": ["V-101"], "line_number": ""}
+    {"tag": "04-VV-002", "tag_type": "vessel", "description": "Feed drum", "connected_to": ["04-P-001"], "line_number": ""},
+    {"tag": "04-P-001", "tag_type": "pump",   "description": "Feed pump",  "connected_to": ["04-VV-002", "04-E-001"], "line_number": ""}
   ],
   "sheet_number": "",
   "process_description": ""
 }
 
-Extract every tag you can see. Return only the JSON object, no other text."""
+Extract EVERY tag you can see. Return only the JSON object, no other text."""
 
 
 def _is_valid_gemini_key(key: str) -> bool:
