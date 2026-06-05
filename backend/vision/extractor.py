@@ -215,43 +215,111 @@ class PIDExtractor:
             _, arr = cv2.threshold(arr, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
             img = Image.fromarray(arr)
 
-            # Run OCR — use PSM 11 (sparse text) to catch scattered tags
-            ocr_text = pytesseract.image_to_string(
+            # Run OCR — PSM 6 (single block) captures more descriptive text
+            # alongside PSM 11 (sparse) for scattered tags
+            ocr_sparse = pytesseract.image_to_string(
                 img,
                 config="--psm 11 --oem 3 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/ ",
             )
+            # Second pass without whitelist to capture full description text
+            ocr_full = pytesseract.image_to_string(img, config="--psm 6 --oem 3")
 
-            logger.debug(f"OCR raw text ({image_path.name}): {ocr_text[:300]}")
+            combined_text = ocr_sparse + "\n" + ocr_full
+            logger.debug(f"OCR raw ({image_path.name}): {combined_text[:400]}")
 
             # Extract tags from OCR text — apply equipment tag filter
-            raw_tags  = list(set(_TAG_PAT.findall(ocr_text.upper())))
-            found_tags = [
-                t for t in raw_tags
-                if len(t) >= 4 and _is_valid_equipment_tag(t)
-            ]
+            raw_tags   = list(set(_TAG_PAT.findall(combined_text.upper())))
+            found_tags = [t for t in raw_tags if len(t) >= 4 and _is_valid_equipment_tag(t)]
             logger.debug(f"OCR raw={len(raw_tags)}, after filter={len(found_tags)}: {found_tags}")
 
-            tags = [
-                {
-                    "tag":          tag,
-                    "tag_type":     _guess_type(tag),
-                    "description":  "",
-                    "connected_to": [],
-                    "line_number":  "",
-                }
-                for tag in sorted(found_tags)
-            ]
+            if not found_tags:
+                return {"tags": [], "sheet_number": "", "process_description": ""}
 
-            logger.info(f"OCR extracted {len(tags)} tags from {image_path.name}")
+            # ── Step 2: use qwen3:8b to extract descriptions + connections from OCR text ──
+            enriched_tags = self._enrich_with_llm(found_tags, combined_text, image_path.name)
+
+            logger.info(f"OCR+LLM extracted {len(enriched_tags)} tags from {image_path.name}")
             return {
-                "tags":                found_tags and tags or [],
+                "tags":                enriched_tags,
                 "sheet_number":        "",
-                "process_description": f"Extracted via OCR from {image_path.name}",
+                "process_description": f"Extracted via OCR+LLM from {image_path.name}",
             }
 
         except Exception as e:
             logger.error(f"OCR failed for {image_path.name}: {e}")
             return {"tags": [], "sheet_number": "", "process_description": ""}
+
+    def _enrich_with_llm(self, found_tags: list[str], ocr_text: str, filename: str) -> list[dict]:
+        """
+        Send OCR-extracted tags + raw OCR text to qwen3:8b.
+        The LLM reads the text context to assign descriptions and infer connections.
+        Falls back to basic tag objects if LLM call fails.
+        """
+        tag_list = ", ".join(found_tags)
+        prompt = f"""You are a P&ID engineering expert. Below is raw text extracted by OCR from a P&ID drawing page.
+
+Equipment tags found: {tag_list}
+
+OCR text from the drawing:
+{ocr_text[:3000]}
+
+For EACH tag listed above, provide:
+1. description: the equipment name/function from the text (e.g. "Fractionator overhead accumulator", "Make-up hydrogen compressor first intercooler")
+2. tag_type: pump | vessel | valve | instrument | exchanger | compressor | heater | other
+3. connected_to: list of other tags that are likely connected based on the context (max 5)
+
+Use the OCR text as context. If a description is not clear, make a reasonable inference from the tag name and nearby text.
+
+Return ONLY valid JSON (no explanation, no markdown):
+{{
+  "tags": [
+    {{"tag": "04-VV-010", "tag_type": "vessel", "description": "Fractionator overhead accumulator", "connected_to": ["04-EA-002A", "04-PA-012A"], "line_number": ""}},
+    {{"tag": "04-EA-002A", "tag_type": "exchanger", "description": "Fractionator overhead air cooler train A", "connected_to": ["04-VV-010"], "line_number": ""}}
+  ]
+}}"""
+
+        try:
+            resp = httpx.post(
+                f"{self.settings.ollama_base_url}/api/generate",
+                json={
+                    "model":   self.settings.ollama_chat_model,
+                    "prompt":  prompt,
+                    "stream":  False,
+                    "options": {"temperature": 0, "num_predict": 2048},
+                },
+                timeout=90,
+            )
+            resp.raise_for_status()
+            raw = resp.json().get("response", "")
+
+            # Strip <think> tokens from qwen3
+            raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+
+            # Parse JSON
+            start, end = raw.find("{"), raw.rfind("}") + 1
+            if start != -1 and end > start:
+                result = json.loads(raw[start:end])
+                enriched = result.get("tags", [])
+                if enriched:
+                    # Ensure all found tags are present (LLM might drop some)
+                    llm_tags = {t["tag"] for t in enriched}
+                    for tag in found_tags:
+                        if tag not in llm_tags:
+                            enriched.append({
+                                "tag": tag, "tag_type": _guess_type(tag),
+                                "description": "", "connected_to": [], "line_number": "",
+                            })
+                    logger.info(f"LLM enriched {len(enriched)} tags for {filename}")
+                    return enriched
+
+        except Exception as e:
+            logger.warning(f"LLM enrichment failed for {filename}: {e} — using basic tags")
+
+        # Fallback: return basic tag objects without descriptions
+        return [
+            {"tag": t, "tag_type": _guess_type(t), "description": "", "connected_to": [], "line_number": ""}
+            for t in sorted(found_tags)
+        ]
 
     def _parse_llm_response(self, raw: str, filename: str) -> dict:
         raw = raw.strip()
