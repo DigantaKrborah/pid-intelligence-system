@@ -84,6 +84,12 @@ def require_unit() -> dict:
 
 # ── Upload ────────────────────────────────────────────────────────────────────
 
+def list_recent_uploads(unit_id: str, limit: int = 5) -> list[dict]:
+    """Return the most recent P&ID documents for a unit (for dashboard)."""
+    status, data = _get(f"/api/v1/upload/recent/{unit_id}", {"limit": limit})
+    return data if status == 200 and isinstance(data, list) else []
+
+
 def upload_pid_files(unit_id: str, files: list) -> list[dict]:
     """Upload multiple PDF files. Returns list of result dicts per file."""
     results = []

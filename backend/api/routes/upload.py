@@ -123,6 +123,28 @@ async def upload_document(
     }
 
 
+@router.get("/recent/{unit_id}")
+async def list_recent_uploads(
+    unit_id: UUID,
+    limit: int = 5,
+    db: AsyncSession = Depends(get_db),
+):
+    """List the most recent P&ID documents uploaded for a unit (for dashboard)."""
+    doc_repo = DocumentRepository(db)
+    docs = await doc_repo.list_by_unit(unit_id)
+    return [
+        {
+            "document_id":       str(d.id),
+            "filename":          d.original_filename or d.filename,
+            "processing_status": d.processing_status,
+            "page_count":        d.page_count,
+            "tags_extracted":    d.tags_extracted,
+            "uploaded_at":       d.uploaded_at.isoformat(),
+        }
+        for d in docs[:limit]
+    ]
+
+
 @router.get("/status/{document_id}")
 async def get_processing_status(document_id: UUID, db: AsyncSession = Depends(get_db)):
     """Poll the processing status of an uploaded P&ID document."""

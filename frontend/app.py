@@ -1,7 +1,7 @@
 import streamlit as st
 from frontend.utils.api_client import (
     get_units, create_unit, get_unit_stats, set_selected_unit,
-    get_health, report_bug,
+    get_health, report_bug, list_recent_uploads,
 )
 from frontend.utils.styles import inject_css, status_badge, section_title
 
@@ -108,9 +108,7 @@ else:
             st.switch_page("pages/4_chat.py")
 
         # Recent uploads table
-        from frontend.utils.api_client import _get
-        _, docs_raw = _get(f"/api/v1/upload/status/recent?unit_id={unit_id}&limit=5")
-        recent = docs_raw if isinstance(docs_raw, list) else []
+        recent = list_recent_uploads(unit_id, limit=5)
 
         if recent:
             st.markdown(section_title("Recent Uploads"), unsafe_allow_html=True)
