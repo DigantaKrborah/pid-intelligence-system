@@ -15,7 +15,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - "5432:5432"
+      - "5433:5432"    # 5432 already used on host; connect via localhost:5433
     healthcheck:
       test:     ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pid_user}"]
       interval: 10s
@@ -34,6 +34,7 @@ services:
     environment:
       APP_ENV:          development
       OLLAMA_BASE_URL:  http://host.docker.internal:11434
+      PYTHONPATH:       /app
     extra_hosts:
       - "host.docker.internal:host-gateway"   # needed on Linux; harmless on Windows
     volumes:
@@ -54,6 +55,7 @@ services:
     env_file: .env
     environment:
       BACKEND_URL: http://backend:8000
+      PYTHONPATH: /app
     volumes:
       - ./frontend:/app/frontend             # hot-reload in dev
     ports:
