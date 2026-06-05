@@ -131,13 +131,122 @@ def _is_valid_gemini_key(key: str) -> bool:
 
 def _guess_type(tag: str) -> str:
     """Guess equipment type from tag prefix."""
-    # Handle area-prefix format: 04-VV-002 → prefix = VV
     parts = tag.split("-")
     if len(parts) == 3 and parts[0].isdigit():
         prefix = parts[1].upper()
     else:
         prefix = parts[0].upper()
     return _TYPE_MAP.get(prefix, "other")
+
+
+# ── Word splitter for OCR all-caps concatenated text ──────────────────────────
+# Maps run-together OCR words back to readable descriptions
+_WORD_SPLIT = re.compile(
+    r'(DRUM|PUMP|COOLER|HEATER|EXCHANGER|COMPRESSOR|SEPARATOR|ACCUMULATOR|'
+    r'COLUMN|VESSEL|TOWER|TANK|FILTER|VALVE|REACTOR|FURNACE|REBOILER|'
+    r'CONDENSER|STRIPPER|ABSORBER|REGENERATOR|TURBINE|INTERCOOLER|'
+    r'STAGE|SUCTION|DISCHARGE|KNOCKOUT|OVERHEAD|REFLUX|BOTTOMS|FEED|'
+    r'MAKE.?UP|HYDROGEN|FRACTIONATOR|HHPS|CLPS|VAPOR|LIQUID|GAS|'
+    r'TRAIN\s*[AB]|TRAINA|TRAINB)'
+)
+
+
+def _clean_description(raw: str) -> str:
+    """
+    Convert OCR all-caps concatenated text to a readable equipment description.
+    e.g. 'FILTEREDFEEDSURGEDRUM' → 'Filtered Feed Surge Drum'
+         'MAKE-UPHCOMPRESSOR-TRAINB' → 'Make-Up H Compressor Train B'
+    """
+    if not raw or len(raw) < 5:
+        return ""
+
+    # Replace hyphens used as word separators
+    text = raw.replace("-", " ")
+
+    # Insert spaces before known engineering keywords that got concatenated
+    def insert_spaces(m: re.Match) -> str:
+        return " " + m.group(0) + " "
+    text = _WORD_SPLIT.sub(insert_spaces, text)
+
+    # Remove non-alphanumeric noise (except spaces)
+    text = re.sub(r"[^A-Z0-9 /]", " ", text)
+
+    # Collapse whitespace and title-case
+    text = " ".join(text.split()).title()
+
+    # Only return if it looks like a real description (at least 2 words or 8+ chars)
+    if len(text) >= 8 or " " in text:
+        return text
+    return ""
+
+
+def _extract_descriptions_from_ocr(tags: list[str], ocr_text: str) -> dict[str, str]:
+    """
+    For each tag, find the nearest descriptive text line in the OCR output.
+    OCR output tends to have: tag on its own line, description on the next line.
+    Returns {tag: description}.
+    """
+    lines = [ln.strip() for ln in ocr_text.split("\n") if ln.strip()]
+    tag_set = set(t.upper() for t in tags)
+    descriptions: dict[str, str] = {}
+
+    for i, line in enumerate(lines):
+        # Check if this line IS a tag
+        line_upper = line.upper()
+        matched_tag = None
+        for tag in tags:
+            if tag.upper() == line_upper or f" {tag.upper()} " in f" {line_upper} ":
+                matched_tag = tag
+                break
+        if not matched_tag:
+            continue
+
+        # Look at the next few lines for a description
+        for offset in range(1, 5):
+            idx = i + offset
+            if idx >= len(lines):
+                break
+            candidate = lines[idx].strip()
+            # Skip if empty, another tag, or revision markers (single letter/number)
+            if not candidate or len(candidate) <= 2:
+                continue
+            if any(t.upper() == candidate.upper() for t in tags):
+                break   # Hit another tag — stop
+            if re.match(r'^[A-Z]$|^\d+$|^NOTES?$|^REV\b', candidate):
+                continue
+
+            desc = _clean_description(candidate)
+            if desc:
+                descriptions[matched_tag] = desc
+                break
+
+    return descriptions
+
+
+def _infer_connections_from_sheet(tags: list[str]) -> dict[str, list[str]]:
+    """
+    Infer likely connections: tags with the same area prefix on the same sheet
+    are likely process-connected (e.g. 04-VV-010 → 04-EA-002, 04-PA-012).
+    Groups equipment by area prefix and links within the group.
+    """
+    # Group by area prefix (e.g. "04" in "04-VV-010")
+    by_area: dict[str, list[str]] = {}
+    for tag in tags:
+        parts = tag.split("-")
+        area = parts[0] if parts[0].isdigit() else "global"
+        by_area.setdefault(area, []).append(tag)
+
+    connections: dict[str, list[str]] = {}
+    for area, group in by_area.items():
+        if len(group) <= 1:
+            continue
+        for tag in group:
+            # Connect to up to 4 other tags in the same area group
+            others = [t for t in group if t != tag][:4]
+            if others:
+                connections[tag] = others
+
+    return connections
 
 
 class PIDExtractor:
@@ -251,75 +360,28 @@ class PIDExtractor:
 
     def _enrich_with_llm(self, found_tags: list[str], ocr_text: str, filename: str) -> list[dict]:
         """
-        Send OCR-extracted tags + raw OCR text to qwen3:8b.
-        The LLM reads the text context to assign descriptions and infer connections.
-        Falls back to basic tag objects if LLM call fails.
+        Extract tag descriptions and infer connections using rule-based text association.
+        Reads the OCR output to find the nearest descriptive text line for each tag.
+        No LLM call — instant and reliable.
         """
-        tag_list = ", ".join(found_tags)
-        prompt = f"""You are a P&ID engineering expert. Below is raw text extracted by OCR from a P&ID drawing page.
+        descriptions = _extract_descriptions_from_ocr(found_tags, ocr_text)
+        connections  = _infer_connections_from_sheet(found_tags)
 
-Equipment tags found: {tag_list}
+        result = []
+        for tag in found_tags:
+            desc = descriptions.get(tag, "")
+            conn = connections.get(tag, [])
+            result.append({
+                "tag":          tag,
+                "tag_type":     _guess_type(tag),
+                "description":  desc,
+                "connected_to": conn,
+                "line_number":  "",
+            })
 
-OCR text from the drawing:
-{ocr_text[:3000]}
-
-For EACH tag listed above, provide:
-1. description: the equipment name/function from the text (e.g. "Fractionator overhead accumulator", "Make-up hydrogen compressor first intercooler")
-2. tag_type: pump | vessel | valve | instrument | exchanger | compressor | heater | other
-3. connected_to: list of other tags that are likely connected based on the context (max 5)
-
-Use the OCR text as context. If a description is not clear, make a reasonable inference from the tag name and nearby text.
-
-Return ONLY valid JSON (no explanation, no markdown):
-{{
-  "tags": [
-    {{"tag": "04-VV-010", "tag_type": "vessel", "description": "Fractionator overhead accumulator", "connected_to": ["04-EA-002A", "04-PA-012A"], "line_number": ""}},
-    {{"tag": "04-EA-002A", "tag_type": "exchanger", "description": "Fractionator overhead air cooler train A", "connected_to": ["04-VV-010"], "line_number": ""}}
-  ]
-}}"""
-
-        try:
-            resp = httpx.post(
-                f"{self.settings.ollama_base_url}/api/generate",
-                json={
-                    "model":   self.settings.ollama_chat_model,
-                    "prompt":  prompt,
-                    "stream":  False,
-                    "options": {"temperature": 0, "num_predict": 2048},
-                },
-                timeout=90,
-            )
-            resp.raise_for_status()
-            raw = resp.json().get("response", "")
-
-            # Strip <think> tokens from qwen3
-            raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
-
-            # Parse JSON
-            start, end = raw.find("{"), raw.rfind("}") + 1
-            if start != -1 and end > start:
-                result = json.loads(raw[start:end])
-                enriched = result.get("tags", [])
-                if enriched:
-                    # Ensure all found tags are present (LLM might drop some)
-                    llm_tags = {t["tag"] for t in enriched}
-                    for tag in found_tags:
-                        if tag not in llm_tags:
-                            enriched.append({
-                                "tag": tag, "tag_type": _guess_type(tag),
-                                "description": "", "connected_to": [], "line_number": "",
-                            })
-                    logger.info(f"LLM enriched {len(enriched)} tags for {filename}")
-                    return enriched
-
-        except Exception as e:
-            logger.warning(f"LLM enrichment failed for {filename}: {e} — using basic tags")
-
-        # Fallback: return basic tag objects without descriptions
-        return [
-            {"tag": t, "tag_type": _guess_type(t), "description": "", "connected_to": [], "line_number": ""}
-            for t in sorted(found_tags)
-        ]
+        logger.info(f"Rule-based enrichment: {len(result)} tags, "
+                    f"{sum(1 for r in result if r['description'])} with descriptions")
+        return result
 
     def _parse_llm_response(self, raw: str, filename: str) -> dict:
         raw = raw.strip()
