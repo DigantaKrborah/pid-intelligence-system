@@ -183,13 +183,39 @@ code {
 }
 
 /* ── Headings ── */
-h1 { font-weight: 700 !important; letter-spacing: -.01em; }
-h2 { font-weight: 600 !important; }
-h3 { font-weight: 600 !important; }
+h1 { font-weight: 700 !important; letter-spacing: -.01em; color: #F1F5F9 !important; }
+h2 { font-weight: 600 !important; color: #F1F5F9 !important; }
+h3 { font-weight: 600 !important; color: #F1F5F9 !important; }
 [data-testid="stCaptionContainer"] p { color: var(--txt2) !important; }
+
+/* ── Force all text inside markdown/html blocks to be visible ── */
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stMarkdownContainer"] li,
+[data-testid="stMarkdownContainer"] span,
+[data-testid="stMarkdownContainer"] div,
+[data-testid="stMarkdownContainer"] td,
+[data-testid="stMarkdownContainer"] th {
+  color: #F1F5F9 !important;
+}
+/* Custom HTML blocks rendered via unsafe_allow_html */
+.stMarkdown div, .stMarkdown p, .stMarkdown span {
+  color: #F1F5F9;
+}
+/* Catch-all for any injected HTML divs that inherit browser default (black) */
+[data-testid="stHtml"] *, .element-container div {
+  color: #F1F5F9;
+}
+
+/* ── Chat message text ── */
+[data-testid="stChatMessageContent"] p,
+[data-testid="stChatMessageContent"] span,
+[data-testid="stChatMessageContent"] div {
+  color: #F1F5F9 !important;
+}
 
 /* ── Alert boxes ── */
 [data-testid="stAlertContainer"] { border-radius: 8px !important; }
+[data-testid="stAlertContainer"] p { color: inherit !important; }
 
 /* ── Progress bar ── */
 [data-testid="stProgressBar"] > div {
@@ -311,7 +337,7 @@ def result_card(tag: str, tag_type: str, unit_name: str,
     r, g, b = _hex_to_rgb(color)
     return f"""
 <div style="background:#1E2130;border:1px solid {border};border-radius:8px;
-  padding:12px 14px;margin-bottom:8px;transition:border-color .12s;cursor:pointer">
+  padding:12px 14px;margin-bottom:8px;transition:border-color .12s;cursor:pointer;color:#F1F5F9">
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
     <code style="font-family:'Roboto Mono',monospace;font-size:15px;font-weight:700;
       color:#F1F5F9;background:transparent;padding:0;border:none">{tag}</code>
@@ -364,7 +390,7 @@ def impact_panel(severity: str, count: int, by_type: dict) -> str:
         rows += f'<div style="margin-bottom:6px"><span style="font-size:11px;color:{color};font-weight:600;text-transform:capitalize">{typ}s:</span><br>{chips}</div>'
     return f"""
 <div style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);
-  border-radius:8px;padding:12px 14px">
+  border-radius:8px;padding:12px 14px;color:#F1F5F9">
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
     {sev_badge}
     <span style="font-size:12px;color:#94A3B8">{count} equipment affected</span>
@@ -394,14 +420,15 @@ def chat_ai_card(answer: str, sources: list | None = None) -> str:
 <details style="margin-top:10px">
   <summary style="font-size:11px;color:#94A3B8;cursor:pointer;user-select:none">
     📄 Sources ({len(sources)})</summary>
-  <div style="background:#262B3D;border-radius:6px;padding:8px 10px;margin-top:6px">
+  <div style="background:#262B3D;border-radius:6px;padding:8px 10px;margin-top:6px;color:#94A3B8">
     {items}
   </div>
 </details>"""
     return f"""
 <div style="display:flex;justify-content:flex-start;margin:8px 0 12px">
   <div style="background:#1E2130;border:1px solid #2D3748;padding:14px 16px;
-    border-radius:3px 14px 14px 14px;max-width:88%;font-size:13px;line-height:1.6">
+    border-radius:3px 14px 14px 14px;max-width:88%;font-size:13px;line-height:1.6;
+    color:#F1F5F9">
     {answer}{sources_html}
   </div>
 </div>"""

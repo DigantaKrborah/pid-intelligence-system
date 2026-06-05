@@ -44,7 +44,10 @@ for msg in st.session_state.chat_history:
         chat_html += chat_ai_card(msg["content"], msg.get("sources"))
 
 if chat_html:
-    st.markdown(chat_html, unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="color:#F1F5F9">{chat_html}</div>',
+        unsafe_allow_html=True,
+    )
 
 # Input
 query = st.chat_input(f"Ask about {unit_name} equipment, process paths, or SOPs…")
