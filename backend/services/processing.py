@@ -1,9 +1,10 @@
 """
 PDF Processing Pipeline (M1)
 
-Flow: PDF file → page images → Gemini Vision → tags → PostgreSQL + NetworkX + ChromaDB
+Flow: PDF file → page images → Tesseract OCR → tags → PostgreSQL + NetworkX + ChromaDB
 """
 import asyncio
+import re
 import uuid
 from pathlib import Path
 from loguru import logger
@@ -13,6 +14,53 @@ from backend.db.database import get_session_factory
 from backend.db.repositories.document_repo import DocumentRepository
 from backend.db.repositories.unit_repo import UnitRepository
 from backend.graph.builder import GraphBuilder
+
+# ── Description helpers ────────────────────────────────────────────────────────
+
+def _sheet_context_from_filename(filename: str) -> str:
+    """
+    Extract a human-readable context string from the PDF filename.
+    e.g. '46. E-195B R3 (Fractionator Ovhd.) DQUP-Model.pdf'
+         → 'Fractionator Overhead (E-195B R3)'
+    e.g. '26.E-172B R1 (Filtered Feed Charge Drum)-Model.pdf'
+         → 'Filtered Feed Charge Drum (E-172B R1)'
+    """
+    name = Path(filename).stem
+    # Extract parenthesised description if present
+    paren = re.search(r'\(([^)]+)\)', name)
+    # Extract equipment number (E-xxx, KA-xxx pattern)
+    equip = re.search(r'\b([A-Z]+-\d+[A-Z]*)\b', name)
+    if paren:
+        desc = paren.group(1).rstrip(".").strip()
+        ref  = equip.group(1) if equip else ""
+        return f"{desc} ({ref})" if ref else desc
+    # Fall back: clean up the filename
+    clean = re.sub(r'\d+\.?\s*', '', name)  # strip leading numbers
+    clean = re.sub(r'[-_](model|dqup|r\d).*', '', clean, flags=re.I)
+    clean = clean.replace("-", " ").strip().title()
+    return clean[:80]
+
+
+def _is_clean_description(desc: str) -> bool:
+    """Return True if the description looks meaningful, not noise."""
+    if not desc or len(desc) < 4:
+        return False
+    # Reject if it's mostly numbers, single words that are noise, or garbled OCR
+    noise_patterns = [
+        r'^\d+',          # starts with numbers
+        r'^[A-Z]\s*\d',   # single letter + number (revision marker)
+        r'Uy|Hprt|Bsbs|Bia|Ies|Anes|Esp|Iale',  # known OCR garbage tokens
+    ]
+    for p in noise_patterns:
+        if re.search(p, desc):
+            return False
+    # Require at least 2 words OR a clear engineering term
+    words = desc.split()
+    if len(words) >= 2:
+        return True
+    engineering_terms = {'accumulator','drum','separator','exchanger','cooler',
+                         'compressor','pump','vessel','column','reactor','heater'}
+    return desc.lower() in engineering_terms
 
 _graph_builder = GraphBuilder()
 
@@ -63,6 +111,9 @@ async def process_pid_document(document_id: uuid.UUID, unit_id: uuid.UUID) -> No
                     logger.warning(f"Page {page_num} extraction error: {page_result['error']}")
                     continue
 
+                # Derive a fallback description from the PDF filename if OCR gave nothing
+                sheet_context = _sheet_context_from_filename(doc.filename)
+
                 # Persist each tag
                 tag_objects: dict[str, uuid.UUID] = {}
                 for tag_data in tags:
@@ -70,12 +121,16 @@ async def process_pid_document(document_id: uuid.UUID, unit_id: uuid.UUID) -> No
                     if not tag_str:
                         continue
 
+                    # Use OCR description if clean; fall back to sheet context
+                    ocr_desc = (tag_data.get("description") or "").strip()
+                    description = ocr_desc if _is_clean_description(ocr_desc) else sheet_context
+
                     tag_obj = await doc_repo.upsert_tag(
                         unit_id=unit_id,
                         document_id=document_id,
                         tag=tag_str,
                         tag_type=tag_data.get("tag_type"),
-                        description=tag_data.get("description"),
+                        description=description,
                         page_number=page_num,
                         raw_attributes={
                             "line_number": tag_data.get("line_number"),
