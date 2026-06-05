@@ -6,6 +6,8 @@ RUN apt-get update --fix-missing && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     libgl1 \
     libgomp1 \
+    tesseract-ocr \
+    tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
