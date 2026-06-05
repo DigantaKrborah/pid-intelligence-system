@@ -42,25 +42,36 @@ def _sheet_context_from_filename(filename: str) -> str:
 
 
 def _is_clean_description(desc: str) -> bool:
-    """Return True if the description looks meaningful, not noise."""
-    if not desc or len(desc) < 4:
+    """Return True if the description looks like real equipment text, not OCR noise."""
+    if not desc or len(desc) < 5:
         return False
-    # Reject if it's mostly numbers, single words that are noise, or garbled OCR
+    # Reject if too long — likely picked up the whole right-side legend column
+    if len(desc) > 80:
+        return False
+    # Reject known noise patterns
     noise_patterns = [
-        r'^\d+',          # starts with numbers
-        r'^[A-Z]\s*\d',   # single letter + number (revision marker)
-        r'Uy|Hprt|Bsbs|Bia|Ies|Anes|Esp|Iale',  # known OCR garbage tokens
+        r'^\d',                          # starts with digit
+        r'^[A-Z]\s*\d',                  # single letter + digit (rev marker A1, B3...)
+        r'\b[A-Z]\b.*\b[A-Z]\b.*\b[A-Z]\b',  # 3+ single-letter words (column refs A B C)
+        r'Uy|Hprt|Bsbs|Bia|Ies|Esp|Nol\b|Tus\b|Oro\b|Nnec\b|Seciind',  # garbled tokens
+        r'Seal\s+\d|P\s+04\s+\d',        # rev/spec references like "Seal 15 1S"
     ]
     for p in noise_patterns:
         if re.search(p, desc):
             return False
-    # Require at least 2 words OR a clear engineering term
-    words = desc.split()
-    if len(words) >= 2:
-        return True
-    engineering_terms = {'accumulator','drum','separator','exchanger','cooler',
-                         'compressor','pump','vessel','column','reactor','heater'}
-    return desc.lower() in engineering_terms
+    # Require at least 2 meaningful words (not all single letters)
+    words = [w for w in desc.split() if len(w) > 1]
+    if len(words) < 2:
+        return False
+    # Accept if it contains a known engineering keyword
+    engineering_kw = {
+        'accumulator','drum','separator','exchanger','cooler','compressor',
+        'pump','vessel','column','reactor','heater','fractionator','overhead',
+        'hhps','intercooler','suction','hydrogen','filtere','charge','quench',
+        'absorber','stripper','reboiler','condenser','turbine',
+    }
+    desc_lower = desc.lower()
+    return any(kw in desc_lower for kw in engineering_kw)
 
 _graph_builder = GraphBuilder()
 
