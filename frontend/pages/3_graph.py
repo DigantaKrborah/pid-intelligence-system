@@ -47,6 +47,8 @@ for e in edges_raw:
 # ── Layout ────────────────────────────────────────────────────────────────────
 col_graph, col_detail = st.columns([3, 1])
 
+selected = None   # initialise before agraph — avoids NameError when nodes is empty
+
 with col_graph:
     if not nodes:
         st.info(f"No graph data for **{unit_name}**. Upload and process P&ID files first.")

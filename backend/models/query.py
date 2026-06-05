@@ -7,7 +7,7 @@ class NLQueryRequest(BaseModel):
     question: str
     unit_id: Optional[UUID] = None
     include_cross_unit: bool = False
-    chat_history: list[dict[str, str]] = []
+    chat_history: list[dict[str, Any]] = []   # Any allows sources/metadata fields
 
 
 class NLQueryResponse(BaseModel):

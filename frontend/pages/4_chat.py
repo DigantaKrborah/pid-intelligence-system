@@ -56,8 +56,12 @@ if query:
     st.markdown(chat_user_bubble(query), unsafe_allow_html=True)
 
     with st.spinner("Thinking…"):
-        data    = nl_query(question=query, unit_id=unit_id,
-                           chat_history=st.session_state.chat_history[:-1])
+        # Send only role+content to backend (strip 'sources' — backend expects str values only)
+        clean_history = [
+            {"role": m["role"], "content": m["content"]}
+            for m in st.session_state.chat_history[:-1]
+        ]
+        data = nl_query(question=query, unit_id=unit_id, chat_history=clean_history)
     answer  = data.get("answer", "No response.")
     sources = data.get("sources", [])
 
