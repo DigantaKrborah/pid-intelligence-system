@@ -43,32 +43,40 @@ def _sheet_context_from_filename(filename: str) -> str:
 
 def _is_clean_description(desc: str) -> bool:
     """Return True if the description looks like real equipment text, not OCR noise."""
-    if not desc or len(desc) < 5:
+    if not desc or len(desc) < 8:
         return False
     # Reject if too long — likely picked up the whole right-side legend column
     if len(desc) > 80:
         return False
+    # Reject if description looks like another tag name (e.g. "Atlv001B", "04-EE-035B")
+    if re.match(r'^[\dA-Z]{2,}-[\dA-Z]', desc, re.I):
+        return False
     # Reject known noise patterns
     noise_patterns = [
-        r'^\d',                          # starts with digit
-        r'^[A-Z]\s*\d',                  # single letter + digit (rev marker A1, B3...)
-        r'\b[A-Z]\b.*\b[A-Z]\b.*\b[A-Z]\b',  # 3+ single-letter words (column refs A B C)
-        r'Uy|Hprt|Bsbs|Bia|Ies|Esp|Nol\b|Tus\b|Oro\b|Nnec\b|Seciind',  # garbled tokens
-        r'Seal\s+\d|P\s+04\s+\d',        # rev/spec references like "Seal 15 1S"
+        r'^\d',                                    # starts with digit
+        r'^[A-Z]\s*\d',                            # single letter + digit (A1, B3…)
+        r'\b[A-Z]\b.*\b[A-Z]\b.*\b[A-Z]\b',       # 3+ isolated single-letter words
+        r'Uy|Hprt|Bsbs|Bia|Ies|Esp|Nol\b|Tus\b|Oro\b|Nnec\b|Seciind|Atlv|Toka',
+        r'Seal\s+\d|P\s+04\s+\d',
+        r'\bKo\b|\bRm\b|\bTn\b',                  # common OCR letter-pair noise
+        r'Train [A-Z]\s+\w+\s+Stage',              # repeated "Train X … Stage" pattern
     ]
     for p in noise_patterns:
-        if re.search(p, desc):
+        if re.search(p, desc, re.I):
             return False
-    # Require at least 2 meaningful words (not all single letters)
-    words = [w for w in desc.split() if len(w) > 1]
+    # Require at least 2 meaningful words (len > 2 avoids abbreviation noise)
+    words = [w for w in desc.split() if len(w) > 2]
     if len(words) < 2:
         return False
     # Accept if it contains a known engineering keyword
     engineering_kw = {
         'accumulator','drum','separator','exchanger','cooler','compressor',
         'pump','vessel','column','reactor','heater','fractionator','overhead',
-        'hhps','intercooler','suction','hydrogen','filtere','charge','quench',
-        'absorber','stripper','reboiler','condenser','turbine',
+        'hhps','intercooler','suction','hydrogen','filtered','charge','quench',
+        'absorber','stripper','reboiler','condenser','turbine','flash','feed',
+        'reflux','bottoms','product','service','utility','cooling','water',
+        'nitrogen','steam','hydrogen','sulfide','amine','crude','naphtha',
+        'gas','oil','liquid','vapor','mixed','stage','makeup',
     }
     desc_lower = desc.lower()
     return any(kw in desc_lower for kw in engineering_kw)
@@ -155,7 +163,7 @@ async def process_pid_document(document_id: uuid.UUID, unit_id: uuid.UUID) -> No
                     all_tags_for_embedding.append({
                         "tag": tag_str,
                         "tag_type": tag_data.get("tag_type", ""),
-                        "description": tag_data.get("description", ""),
+                        "description": description,
                     })
 
                     # Add node to NetworkX graph
@@ -163,7 +171,7 @@ async def process_pid_document(document_id: uuid.UUID, unit_id: uuid.UUID) -> No
                         unit_name=unit.name,
                         tag=tag_str,
                         tag_type=tag_data.get("tag_type", "other"),
-                        description=tag_data.get("description", ""),
+                        description=description,
                         document_id=str(document_id),
                         page_number=page_num,
                         drawing_ref=drawing_ref,
