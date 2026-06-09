@@ -7,7 +7,8 @@ class NLQueryRequest(BaseModel):
     question: str
     unit_id: Optional[UUID] = None
     include_cross_unit: bool = False
-    chat_history: list[dict[str, Any]] = []   # Any allows sources/metadata fields
+    chat_history: list[dict[str, Any]] = []
+    drawing_ids: list[str] = []   # empty = all drawings; non-empty = restrict to these doc IDs
 
 
 class NLQueryResponse(BaseModel):

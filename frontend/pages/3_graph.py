@@ -24,6 +24,30 @@ graph_data = get_graph(unit_name, include_cross_unit=cross_unit)
 nodes_raw  = graph_data.get("nodes", [])
 edges_raw  = graph_data.get("edges", [])
 
+# ── Drawing filter ────────────────────────────────────────────────────────────
+from frontend.utils.api_client import list_all_documents
+all_docs = [d for d in list_all_documents(unit["id"]) if d["processing_status"] == "completed"]
+doc_options = {d["filename"]: d["document_id"] for d in all_docs}
+
+if doc_options:
+    selected_drawings = st.multiselect(
+        "Filter by drawing",
+        options=list(doc_options.keys()),
+        default=list(doc_options.keys()),
+        placeholder="Select drawings to display…",
+    )
+    selected_doc_ids = {doc_options[k] for k in selected_drawings}
+    if selected_doc_ids and len(selected_doc_ids) < len(doc_options):
+        filtered_node_ids = {
+            n["id"] for n in nodes_raw
+            if str(n.get("document_id", "")) in selected_doc_ids
+        }
+        nodes_raw = [n for n in nodes_raw if n["id"] in filtered_node_ids]
+        edges_raw = [
+            e for e in edges_raw
+            if e["source"] in filtered_node_ids and e["target"] in filtered_node_ids
+        ]
+
 def _label_color(hex_color: str) -> str:
     h = hex_color.lstrip("#")
     r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
@@ -76,12 +100,24 @@ with col_detail:
     sel_node = highlight or (selected if isinstance(selected, str) else None)
 
     if sel_node:
+        # Look up node attributes from already-loaded graph data
+        node_attrs = next((n for n in nodes_raw if n.get("id") == sel_node), {})
+        drawing_ref = node_attrs.get("drawing_ref", "")
+        page_number = node_attrs.get("page_number")
+
         st.markdown(
-            f'<h3 style="font-size:16px;font-weight:700;margin-bottom:8px">⚙️ '
+            f'<h3 style="font-size:16px;font-weight:700;margin-bottom:4px">⚙️ '
             f'<code style="background:transparent;border:none;padding:0;color:inherit;font-size:16px">'
             f'{sel_node}</code></h3>',
             unsafe_allow_html=True,
         )
+        if drawing_ref:
+            page_str = f"&nbsp;&nbsp;·&nbsp;&nbsp;Page {page_number}" if page_number else ""
+            st.markdown(
+                f'<div style="font-size:11px;color:#64748B;margin-bottom:8px;'
+                f'font-family:\'Roboto Mono\',monospace">📐 {drawing_ref}{page_str}</div>',
+                unsafe_allow_html=True,
+            )
         nb = get_neighbours(unit_name, sel_node, depth=1)
 
         if nb.get("upstream"):

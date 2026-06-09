@@ -6,9 +6,16 @@ from backend.graph.builder import GraphBuilder
 
 
 class GraphAgent:
-    def __init__(self, graph: GraphBuilder, unit_name: str):
+    def __init__(self, graph: GraphBuilder, unit_name: str, drawing_ids: list[str] | None = None):
         self.graph = graph
         self.unit_name = unit_name
+        # None or empty list means all drawings
+        self._doc_ids: set[str] | None = set(drawing_ids) if drawing_ids else None
+
+    def _in_scope(self, attrs: dict) -> bool:
+        if self._doc_ids is None:
+            return True
+        return str(attrs.get("document_id", "")) in self._doc_ids
 
     def search_equipment(self, tag: str) -> dict:
         """Return details and connections for a specific tag."""
@@ -16,23 +23,27 @@ class GraphAgent:
         graph = self.graph.load_or_create(self.unit_name)
         attrs = dict(graph.nodes.get(tag, {})) if tag in graph else {}
         return {
-            "tag": tag,
-            "found": tag in graph,
-            "tag_type": attrs.get("tag_type", "unknown"),
+            "tag":         tag,
+            "found":       tag in graph,
+            "tag_type":    attrs.get("tag_type", "unknown"),
             "description": attrs.get("description", ""),
-            "upstream": neighbours["upstream"],
-            "downstream": neighbours["downstream"],
-            "unit": self.unit_name,
+            "upstream":    neighbours["upstream"],
+            "downstream":  neighbours["downstream"],
+            "unit":        self.unit_name,
+            "page_number": attrs.get("page_number"),
+            "drawing_ref": attrs.get("drawing_ref", ""),
         }
 
     def list_by_type(self, equipment_type: str) -> dict:
-        """List all equipment of a given type in the unit."""
+        """List all equipment of a given type in the unit, filtered by drawing scope."""
         items = self.graph.get_nodes_by_type(self.unit_name, equipment_type)
+        if self._doc_ids is not None:
+            items = [i for i in items if str(i.get("document_id", "")) in self._doc_ids]
         return {
             "equipment_type": equipment_type,
-            "unit": self.unit_name,
-            "count": len(items),
-            "tags": [i["tag"] for i in items],
+            "unit":           self.unit_name,
+            "count":          len(items),
+            "tags":           [i["tag"] for i in items],
         }
 
     def trace_path(self, source_tag: str, target_tag: str) -> dict:
@@ -41,10 +52,10 @@ class GraphAgent:
         return {
             "source": source_tag,
             "target": target_tag,
-            "found": path is not None,
-            "path": path or [],
+            "found":  path is not None,
+            "path":   path or [],
             "length": len(path) - 1 if path else 0,
-            "unit": self.unit_name,
+            "unit":   self.unit_name,
         }
 
     def analyze_impact(self, tag: str, depth: int = 5) -> dict:
@@ -52,11 +63,12 @@ class GraphAgent:
         return self.graph.get_impact_analysis(self.unit_name, tag, depth)
 
     def get_all_tags(self) -> dict:
-        """Return summary stats and tag list for the unit graph."""
+        """Return summary stats and tag list for the unit graph, filtered by drawing scope."""
         stats = self.graph.get_graph_stats(self.unit_name)
         graph = self.graph.load_or_create(self.unit_name)
         tag_list = [
             {"tag": n, "type": d.get("tag_type", "other")}
             for n, d in graph.nodes(data=True)
+            if self._in_scope(d)
         ]
         return {"unit": self.unit_name, "stats": stats, "tags": tag_list[:200]}

@@ -36,6 +36,14 @@ def _patch(path: str, json: dict | None = None) -> tuple[int, any]:
         return 0, {"error": str(exc)}
 
 
+def _delete(path: str) -> tuple[int, any]:
+    try:
+        r = httpx.delete(f"{BACKEND_URL}{path}", timeout=TIMEOUT)
+        return r.status_code, r.json()
+    except Exception as exc:
+        return 0, {"error": str(exc)}
+
+
 # ── Units ──────────────────────────────────────────────────────────────────────
 
 def get_units() -> list[dict]:
@@ -107,6 +115,18 @@ def upload_pid_files(unit_id: str, files: list) -> list[dict]:
 def get_upload_status(document_id: str) -> dict:
     status, data = _get(f"/api/v1/upload/status/{document_id}")
     return data if status == 200 else {}
+
+
+def list_all_documents(unit_id: str) -> list[dict]:
+    status, data = _get(f"/api/v1/upload/list/{unit_id}")
+    return data if status == 200 else []
+
+
+def delete_document(document_id: str) -> tuple[bool, str]:
+    status, data = _delete(f"/api/v1/upload/pid/{document_id}")
+    if status == 200:
+        return True, data.get("filename", "")
+    return False, data.get("detail", data.get("error", "Delete failed"))
 
 
 def upload_document(unit_id: str, doc_type: str, file) -> tuple[bool, dict]:
@@ -181,10 +201,16 @@ def get_path(unit_name: str, source: str, target: str) -> dict:
 
 # ── NL Query ─────────────────────────────────────────────────────────────────
 
-def nl_query(question: str, unit_id: str, chat_history: list[dict]) -> dict:
+def nl_query(question: str, unit_id: str, chat_history: list[dict],
+             drawing_ids: list[str] | None = None) -> dict:
     status, data = _post(
         "/api/v1/query/nl",
-        json={"question": question, "unit_id": unit_id, "chat_history": chat_history},
+        json={
+            "question":    question,
+            "unit_id":     unit_id,
+            "chat_history": chat_history,
+            "drawing_ids": drawing_ids or [],
+        },
         timeout=60,
     )
     if status == 200:

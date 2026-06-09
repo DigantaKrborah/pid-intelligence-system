@@ -102,6 +102,17 @@ class RAGEngine:
             "doc_chunks_indexed": docs_col.count(),
         }
 
+    def delete_tags(self, unit_name: str, tag_ids: list[str]) -> None:
+        """Remove specific tag embeddings from the equipment collection."""
+        if not tag_ids:
+            return
+        try:
+            collection = self._get_or_create(self._collection_name(unit_name, "equipment"))
+            collection.delete(ids=tag_ids)
+            logger.info(f"Deleted {len(tag_ids)} tag embeddings for unit {unit_name}")
+        except Exception as exc:
+            logger.warning(f"ChromaDB delete_tags failed (non-fatal): {exc}")
+
     def delete_unit_collections(self, unit_name: str) -> None:
         """Remove all ChromaDB collections for a unit (called on archive)."""
         for kind in ("equipment", "docs"):

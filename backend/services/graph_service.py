@@ -89,3 +89,8 @@ async def ensure_all_graphs_loaded(db: AsyncSession) -> None:
             # Pre-warm the cache
             _graph.load_or_create(unit.name)
             logger.debug(f"Graph pre-loaded for {unit.name}")
+
+
+def get_graph_builder() -> GraphBuilder:
+    """Return the shared GraphBuilder singleton."""
+    return _graph

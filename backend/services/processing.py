@@ -13,7 +13,7 @@ from backend.config import get_settings
 from backend.db.database import get_session_factory
 from backend.db.repositories.document_repo import DocumentRepository
 from backend.db.repositories.unit_repo import UnitRepository
-from backend.graph.builder import GraphBuilder
+from backend.services.graph_service import get_graph_builder as _get_graph_builder
 
 # ── Description helpers ────────────────────────────────────────────────────────
 
@@ -73,7 +73,6 @@ def _is_clean_description(desc: str) -> bool:
     desc_lower = desc.lower()
     return any(kw in desc_lower for kw in engineering_kw)
 
-_graph_builder = GraphBuilder()
 
 
 async def process_pid_document(document_id: uuid.UUID, unit_id: uuid.UUID) -> None:
@@ -124,6 +123,9 @@ async def process_pid_document(document_id: uuid.UUID, unit_id: uuid.UUID) -> No
 
                 # Derive a fallback description from the PDF filename if OCR gave nothing
                 sheet_context = _sheet_context_from_filename(doc.filename)
+                # Human-readable drawing reference shown in graph/chat
+                sheet_number = page_result.get("sheet_number", "")
+                drawing_ref  = sheet_number or Path(doc.original_filename or doc.filename).stem[:60]
 
                 # Persist each tag
                 tag_objects: dict[str, uuid.UUID] = {}
@@ -157,13 +159,14 @@ async def process_pid_document(document_id: uuid.UUID, unit_id: uuid.UUID) -> No
                     })
 
                     # Add node to NetworkX graph
-                    _graph_builder.add_equipment(
+                    _get_graph_builder().add_equipment(
                         unit_name=unit.name,
                         tag=tag_str,
                         tag_type=tag_data.get("tag_type", "other"),
                         description=tag_data.get("description", ""),
                         document_id=str(document_id),
                         page_number=page_num,
+                        drawing_ref=drawing_ref,
                     )
 
                 # Add edges for connected_to relationships
@@ -176,7 +179,7 @@ async def process_pid_document(document_id: uuid.UUID, unit_id: uuid.UUID) -> No
                         if not target:
                             continue
                         # Add edge to graph
-                        _graph_builder.add_connection(
+                        _get_graph_builder().add_connection(
                             unit_name=unit.name,
                             source=source,
                             target=target,
@@ -192,7 +195,7 @@ async def process_pid_document(document_id: uuid.UUID, unit_id: uuid.UUID) -> No
             await session.commit()
 
             # Save NetworkX graph to disk
-            _graph_builder.save(unit.name)
+            _get_graph_builder().save(unit.name)
             logger.info(f"Graph saved for unit {unit.name}")
 
             # Index tags in ChromaDB for semantic search

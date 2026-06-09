@@ -100,18 +100,22 @@ def _gather_context(
             for tag in tags_in_question[:3]:
                 result = graph_agent.search_equipment(tag)
                 if result["found"]:
+                    drawing = result.get("drawing_ref", "")
+                    page    = result.get("page_number")
+                    ref_str = ""
+                    if drawing:
+                        ref_str = f"  Drawing: {drawing}"
+                        if page:
+                            ref_str += f" | Page {page}"
                     lines.append(
                         f"Tag: {result['tag']} | Type: {result['tag_type']} | "
                         f"Description: {result['description']}\n"
                         f"  Upstream: {result['upstream'] or 'none'}\n"
                         f"  Downstream: {result['downstream'] or 'none'}"
+                        + (f"\n{ref_str}" if ref_str else "")
                     )
-                    prov = pid_agent.get_tag_provenance(tag, unit_name)
-                    if prov.get("found"):
-                        src  = prov.get("source_document", "")
-                        page = prov.get("page_number", "?")
-                        lines.append(f"  Source: {src} page {page}")
-                        sources.append({"source": src, "page": str(page)})
+                    if drawing:
+                        sources.append({"source": drawing, "page": str(page or "?")})
                 else:
                     # Give a helpful explanation with what IS available
                     all_tags = graph_agent.get_all_tags()
@@ -195,11 +199,17 @@ def _gather_context(
             for tag in tags_in_question[:2]:
                 result = graph_agent.search_equipment(tag)
                 if result["found"]:
+                    drawing = result.get("drawing_ref", "")
+                    page    = result.get("page_number")
+                    ref_str = f"  Drawing: {drawing}" + (f" | Page {page}" if page else "") if drawing else ""
                     lines.append(
                         f"{result['tag']} ({result['tag_type']}): {result['description']}\n"
                         f"  Upstream: {result['upstream'] or 'none'}\n"
                         f"  Downstream: {result['downstream'] or 'none'}"
+                        + (f"\n{ref_str}" if ref_str else "")
                     )
+                    if drawing:
+                        sources.append({"source": drawing, "page": str(page or "?")})
                 else:
                     all_tags = graph_agent.get_all_tags()
                     tag_count = all_tags.get("stats", {}).get("nodes", 0)
@@ -252,6 +262,7 @@ class CoordinatorAgent:
         question: str,
         unit_name: str,
         chat_history: list[dict] | None = None,
+        drawing_ids: list[str] | None = None,
     ) -> dict:
         """
         Synchronous — run via asyncio.to_thread() from async routes.
@@ -260,7 +271,7 @@ class CoordinatorAgent:
         chat_history = chat_history or []
         query_type   = classify_query(question)
 
-        graph_agent    = GraphAgent(self.graph, unit_name)
+        graph_agent    = GraphAgent(self.graph, unit_name, drawing_ids or [])
         doc_agent      = DocumentAgent(self.rag, unit_name)
         incident_agent = IncidentAgent()
         pid_agent      = PIDAgent()

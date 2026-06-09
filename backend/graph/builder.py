@@ -52,6 +52,23 @@ class GraphBuilder:
         graph = self.load_or_create(unit_name)
         graph.add_edge(source, target, connection_type=connection_type, **attrs)
 
+    def remove_document_nodes(self, unit_name: str, document_id: str) -> int:
+        """Remove all graph nodes that came from a specific document. Returns count removed."""
+        graph = self.load_or_create(unit_name)
+        to_remove = [n for n, d in graph.nodes(data=True) if str(d.get("document_id", "")) == document_id]
+        graph.remove_nodes_from(to_remove)
+        self.save(unit_name)
+        logger.info(f"Removed {len(to_remove)} nodes from unit {unit_name} (doc {document_id})")
+        return len(to_remove)
+
+    def get_nodes_by_document(self, unit_name: str, document_ids: list[str]) -> set[str]:
+        """Return the set of tag names that belong to any of the given document IDs."""
+        graph = self.load_or_create(unit_name)
+        return {
+            n for n, d in graph.nodes(data=True)
+            if str(d.get("document_id", "")) in document_ids
+        }
+
     def add_cross_unit_connection(
         self,
         source_tag: str,

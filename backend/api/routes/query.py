@@ -37,6 +37,7 @@ async def natural_language_query(
         payload.question,
         unit.name,
         payload.chat_history,
+        payload.drawing_ids or [],
     )
 
     return NLQueryResponse(
