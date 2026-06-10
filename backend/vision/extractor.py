@@ -17,10 +17,10 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from backend.config import get_settings
 
 # ── Tag patterns ──────────────────────────────────────────────────────────────
-# Matches: 04-VV-002, 04-P-001A, P-101, TIC-301, E-172B, FCV-101
+# Matches: 04-VV-002, 04-P-001A, 04-FE-0358, P-101, TIC-301, E-172B, FCV-101A
 _TAG_PAT = re.compile(
-    r'\b(?:\d{2,4}-[A-Z]{1,5}-\d{2,4}[A-Z]?'   # 04-VV-002 style
-    r'|[A-Z]{1,5}-\d{2,4}[A-Z]?)\b'              # P-101 / E-172B style
+    r'\b(?:\d{2,4}-[A-Z]{1,5}-\d{2,5}[A-Z]{0,2}'   # 04-VV-002 / 04-FE-0358 / 04-P-001A
+    r'|[A-Z]{1,5}-\d{2,5}[A-Z]{0,2})\b'              # P-101 / FCV-101A / TIC-3001B
 )
 
 # Equipment type mapping from tag prefix — only KNOWN equipment prefixes
@@ -32,25 +32,38 @@ _TYPE_MAP = {
     "D": "vessel",  "DR": "vessel",  "KO": "vessel",  "FA": "vessel",
     # Exchangers / coolers
     "E": "exchanger",  "HE": "exchanger",  "AE": "exchanger",
-    "EA": "exchanger",  "EE": "exchanger",  "AC": "exchanger",
+    "EA": "exchanger",  "EE": "exchanger",
     # Compressors / turbines
     "C": "compressor",  "K": "compressor",  "KA": "compressor",
-    "PT": "compressor",  "GT": "compressor",
+    "GT": "compressor",
     # Valves
-    "FCV": "valve",  "LV": "valve",  "PCV": "valve",  "PV": "valve",
-    "HV": "valve",   "XV": "valve",  "SDV": "valve",  "TV": "valve",
-    "FV": "valve",   "BV": "valve",  "MOV": "valve",  "PSV": "valve",
-    "PRV": "valve",  "CV": "valve",  "TCV": "valve",  "LCV": "valve",
-    # Instruments / transmitters / indicators
+    "FCV": "valve",  "LV": "valve",   "PCV": "valve",  "PV": "valve",
+    "HV": "valve",   "XV": "valve",   "SDV": "valve",  "TV": "valve",
+    "FV": "valve",   "BV": "valve",   "MOV": "valve",  "PSV": "valve",
+    "PRV": "valve",  "CV": "valve",   "TCV": "valve",  "LCV": "valve",
+    "HCV": "valve",  "ESDV": "valve", "PSDV": "valve", "RV": "valve",
+    # Instruments — controllers
     "FIC": "instrument",  "LIC": "instrument",  "PIC": "instrument",
-    "TIC": "instrument",  "FT":  "instrument",  "LT":  "instrument",
-    "PT":  "instrument",  "TT":  "instrument",  "AT":  "instrument",
+    "TIC": "instrument",  "AIC": "instrument",  "FRC": "instrument",
+    "LRC": "instrument",  "PRC": "instrument",  "TRC": "instrument",
+    # Instruments — transmitters
+    "FT":  "instrument",  "LT":  "instrument",  "PT":  "instrument",
+    "TT":  "instrument",  "AT":  "instrument",  "WT":  "instrument",
+    "ZT":  "instrument",  "ST":  "instrument",  "XT":  "instrument",
+    # Instruments — differential pressure
+    "PDT": "instrument",  "PDI": "instrument",  "PDIC": "instrument",
+    "PDIT": "instrument", "PDIS": "instrument",
+    # Instruments — elements / indicators
     "FE":  "instrument",  "TE":  "instrument",  "PE":  "instrument",
     "FI":  "instrument",  "LI":  "instrument",  "PI":  "instrument",
-    "TI":  "instrument",  "AI":  "instrument",  "FQ":  "instrument",
-    "FS":  "instrument",  "LS":  "instrument",  "PS":  "instrument",
-    "TS":  "instrument",  "FC":  "instrument",  "LC":  "instrument",
-    "PC":  "instrument",  "TC":  "instrument",  "FR":  "instrument",
+    "TI":  "instrument",  "AI":  "instrument",
+    # Instruments — switches
+    "FQ":  "instrument",  "FS":  "instrument",  "LS":  "instrument",
+    "PS":  "instrument",  "TS":  "instrument",  "AS":  "instrument",
+    # Instruments — converters / misc
+    "FC":  "instrument",  "LC":  "instrument",  "PC":  "instrument",
+    "TC":  "instrument",  "FR":  "instrument",  "LG":  "instrument",
+    "PG":  "instrument",  "TG":  "instrument",
     # Heaters / furnaces
     "H": "heater",  "F": "heater",  "B": "heater",  "HF": "heater",
     # Filters / strainers
@@ -59,6 +72,23 @@ _TYPE_MAP = {
     "MX": "other",  "AG": "other",
     # Lines
     "L": "line",
+}
+
+# Known pipeline fluid/service codes — used in line numbers like 04-HC-1001
+_LINE_SERVICE_CODES = {
+    # Hydrocarbons
+    "HC", "HCG", "HCL", "HGO", "LGO", "VGO", "VR", "LN", "RCO", "SLOP",
+    # Hydrogen / gas
+    "H2", "H2S", "HG", "FG", "NG", "RG", "SG",
+    # Nitrogen / air
+    "N2", "AR", "IA", "PA",
+    # Water / steam / condensate
+    "CW", "CWR", "CWS", "RW", "DW", "SW", "BFW", "FW", "WW",
+    "STM", "CSS", "HSC", "LS", "MS", "HS", "CD", "SC",
+    # Drain / vent / oily water
+    "DR", "OWS", "PW", "SWS", "VT", "OV", "AG",
+    # Chemical injection
+    "CI", "AMN", "DEA", "MEA", "MDEA",
 }
 
 # Noise prefixes to reject — drawing labels, notes, utility codes
@@ -70,14 +100,51 @@ _NOISE_PREFIXES = {
 }
 
 
+def _deduplicate_tags(tags: list[str]) -> list[str]:
+    """
+    Drop bare forms when the full area-prefixed form already exists.
+    E.g. if both '04-EA-002' and 'EA-002' are found, keep only '04-EA-002'.
+    """
+    area_keys: set[tuple[str, str]] = set()
+    for t in tags:
+        parts = t.split("-")
+        if len(parts) == 3 and parts[0].isdigit():
+            area_keys.add((parts[1].upper(), parts[2].upper()))
+
+    result = []
+    for tag in tags:
+        parts = tag.split("-")
+        if len(parts) == 2:
+            key = (parts[0].upper(), parts[1].upper())
+            if key in area_keys:
+                continue   # full form exists — drop this bare form
+        result.append(tag)
+    return result
+
+
+def _extract_drawing_number(ocr_text: str) -> str:
+    """Try to pull the drawing/sheet number from the P&ID title block."""
+    patterns = [
+        r'(?:DWG|DRAWING|DOC(?:UMENT)?)\.?\s*NO\.?\s*:?\s*([A-Z0-9][A-Z0-9\-/]{3,30})',
+        r'P(?:&|AND)ID\s*(?:NO\.?)?\s*:?\s*([A-Z0-9][A-Z0-9\-/]{3,30})',
+        r'SHEET\s*NO\.?\s*:?\s*([A-Z0-9][A-Z0-9\-/]{2,20})',
+    ]
+    text_upper = ocr_text.upper()
+    for pat in patterns:
+        m = re.search(pat, text_upper)
+        if m:
+            return m.group(1).strip()
+    return ""
+
+
 def _is_valid_equipment_tag(tag: str) -> bool:
     """Return True only if the tag looks like a real equipment tag, not a drawing annotation."""
     parts = tag.split("-")
 
-    # Area-format: 04-VV-002 — middle part must be a known type
+    # Area-format: 04-VV-002 or 04-HC-1001 (line) — accept known types AND line service codes
     if len(parts) == 3 and parts[0].isdigit():
         prefix = parts[1].upper()
-        return prefix in _TYPE_MAP
+        return prefix in _TYPE_MAP or prefix in _LINE_SERVICE_CODES
 
     # Standard format: P-101, FCV-001, E-172B
     if len(parts) >= 2:
@@ -105,6 +172,8 @@ Analyse this P&ID drawing and extract ALL equipment and instrument tags visible.
 Tag formats vary by plant:
   Standard ISA:    P-101, TIC-301, V-201, FCV-101, E-101
   Area-type-seq:   04-VV-002, 04-P-001, 04-TIC-001, 12-E-005
+  Process lines:   04-HC-1001, 04-H2-2001, 04-CW-3001, 04-N2-4001
+                   (area-FLUID_CODE-number — tag_type must be "line")
 
 For each tag return:
 - tag: EXACT tag identifier as printed
@@ -134,6 +203,11 @@ def _guess_type(tag: str) -> str:
     parts = tag.split("-")
     if len(parts) == 3 and parts[0].isdigit():
         prefix = parts[1].upper()
+        if prefix in _TYPE_MAP:
+            return _TYPE_MAP[prefix]
+        if prefix in _LINE_SERVICE_CODES:
+            return "line"
+        return "other"
     else:
         prefix = parts[0].upper()
     return _TYPE_MAP.get(prefix, "other")
@@ -401,11 +475,17 @@ class PIDExtractor:
 
             # Extract tags from OCR text — apply equipment tag filter
             raw_tags   = list(set(_TAG_PAT.findall(combined_text.upper())))
-            found_tags = [t for t in raw_tags if len(t) >= 4 and _is_valid_equipment_tag(t)]
-            logger.debug(f"OCR raw={len(raw_tags)}, after filter={len(found_tags)}: {found_tags}")
+            valid_tags = [t for t in raw_tags if len(t) >= 4 and _is_valid_equipment_tag(t)]
+            # Prefer area-prefixed full forms over bare forms (04-EA-002 beats EA-002)
+            found_tags = _deduplicate_tags(valid_tags)
+            logger.debug(f"OCR raw={len(raw_tags)}, valid={len(valid_tags)}, "
+                         f"after dedup={len(found_tags)}: {found_tags}")
 
             if not found_tags:
                 return {"tags": [], "sheet_number": "", "process_description": ""}
+
+            sheet_number = _extract_drawing_number(combined_text)
+            logger.debug(f"Drawing number extracted: {sheet_number!r}")
 
             # ── Step 2: rule-based enrichment using bounding-box layout ──
             enriched_tags = self._enrich_with_llm(found_tags, combined_text, image_path.name, img)
@@ -413,8 +493,8 @@ class PIDExtractor:
             logger.info(f"OCR+LLM extracted {len(enriched_tags)} tags from {image_path.name}")
             return {
                 "tags":                enriched_tags,
-                "sheet_number":        "",
-                "process_description": f"Extracted via OCR+LLM from {image_path.name}",
+                "sheet_number":        sheet_number,
+                "process_description": f"Extracted via OCR from {image_path.name}",
             }
 
         except Exception as e:
