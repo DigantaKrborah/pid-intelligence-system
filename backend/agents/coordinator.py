@@ -42,8 +42,9 @@ _IMPACT_PAT = re.compile(r"\b(impact|fail|isolat|trip|affect)\b|what happens?|do
 _SOP_PAT    = re.compile(r"\b(sop|procedure|manual|how to|startup|shutdown|isolation|step)\b", re.I)
 _DETAIL_PAT = re.compile(r"\b(what is|tell me about|describe|detail|info|about)\b", re.I)
 _HAZOP_PAT  = re.compile(
-    r"\b(hazop|what.{0,12}(wrong|fail|happen|consequence|scenario)"
-    r"|consequence|deviation|safeguard|overpressur|no\s+flow|reverse\s+flow|ruptur|leak\s+from)\b",
+    r"\bhazop\b"
+    r"|what.{0,18}(wrong|fail|happen|consequence|scenario)"
+    r"|\b(consequence|deviation|safeguard|overpressur|no\s+flow|reverse\s+flow|ruptur|leak\s+from)",
     re.I,
 )
 
@@ -347,10 +348,10 @@ class CoordinatorAgent:
             answer = re.sub(r"<think>.*?</think>", "", answer, flags=re.DOTALL).strip()
         except FuturesTimeout:
             logger.warning("LLM formatting timed out after 50s, returning raw data")
-            answer = f"**{unit_name} — {query_type.title()} Query**\n\n{context}"
+            answer = f"**{unit_name} - {query_type.title()} Query**\n\n{context}"
         except Exception as exc:
             logger.warning(f"LLM formatting failed ({exc}), returning raw data")
-            answer = f"**{unit_name} — {query_type.title()} Query**\n\n{context}"
+            answer = f"**{unit_name} - {query_type.title()} Query**\n\n{context}"
         finally:
             _pool.shutdown(wait=False)
 
