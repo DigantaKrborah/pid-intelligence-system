@@ -6,7 +6,7 @@ from loguru import logger
 from backend.config import get_settings
 from backend.db.database import init_db, get_session_factory
 from backend.services.graph_service import ensure_all_graphs_loaded
-from backend.api.routes import units, upload, search, graph, query, incidents
+from backend.api.routes import units, upload, search, graph, query, incidents, tags
 
 
 @asynccontextmanager
@@ -44,6 +44,7 @@ def create_app() -> FastAPI:
     app.include_router(graph.router,     prefix="/api/v1/graph",     tags=["Graph"])
     app.include_router(query.router,     prefix="/api/v1/query",     tags=["Query"])
     app.include_router(incidents.router, prefix="/api/v1/incidents", tags=["Incidents"])
+    app.include_router(tags.router,     prefix="/api/v1/tags",      tags=["Tags"])
 
     @app.get("/health")
     async def health():

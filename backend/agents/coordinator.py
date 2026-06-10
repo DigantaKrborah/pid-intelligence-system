@@ -41,10 +41,16 @@ _PATH_PAT   = re.compile(r"\b(path|route|from .{1,30} to|trace|flow)\b", re.I)
 _IMPACT_PAT = re.compile(r"\b(impact|fail|isolat|trip|affect)\b|what happens?|downstream of", re.I)
 _SOP_PAT    = re.compile(r"\b(sop|procedure|manual|how to|startup|shutdown|isolation|step)\b", re.I)
 _DETAIL_PAT = re.compile(r"\b(what is|tell me about|describe|detail|info|about)\b", re.I)
+_HAZOP_PAT  = re.compile(
+    r"\b(hazop|what.{0,12}(wrong|fail|happen|consequence|scenario)"
+    r"|consequence|deviation|safeguard|overpressur|no\s+flow|reverse\s+flow|ruptur|leak\s+from)\b",
+    re.I,
+)
 
 
 def classify_query(question: str) -> str:
     if _PATH_PAT.search(question):    return "path"
+    if _HAZOP_PAT.search(question):   return "hazop"
     if _IMPACT_PAT.search(question):  return "impact"
     if _SOP_PAT.search(question):     return "sop"
     if _LIST_PAT.search(question):    return "list"
@@ -191,6 +197,41 @@ def _gather_context(
             lines.append(
                 "No relevant SOP or manual found. "
                 "Upload SOPs in the Documents page and ensure they are indexed."
+            )
+
+    elif query_type == "hazop":
+        tag = tags_in_question[0] if tags_in_question else None
+        if tag:
+            impact = graph_agent.analyze_impact(tag)
+            sop_ctx = doc_agent.search_sop(f"emergency isolation shutdown procedure {tag}", n_results=2)
+            if impact.get("found"):
+                by_type = impact.get("affected_by_type", {})
+                impact_lines = [
+                    f"  {typ.title()}s ({len(tags)} affected): {', '.join(tags[:6])}"
+                    for typ, tags in by_type.items()
+                ]
+                lines.append(
+                    f"HAZOP Node: {tag}\n"
+                    f"Deviation: Failure / Loss of containment\n"
+                    f"Consequence severity: {impact['severity'].upper()}\n"
+                    f"Downstream affected ({impact['affected_count']} items):\n"
+                    + "\n".join(impact_lines)
+                )
+            else:
+                all_tags = graph_agent.get_all_tags()
+                lines.append(
+                    f"Tag '{tag}' is NOT in the knowledge graph ({all_tags.get('stats',{}).get('nodes',0)} tags indexed).\n"
+                    f"Upload the P&ID containing '{tag}' to enable HAZOP analysis."
+                )
+            if sop_ctx.get("results_found", 0) > 0:
+                lines.append("\nRelevant safety / isolation procedures:")
+                for r in sop_ctx["results"]:
+                    lines.append(f"  [{r.get('source','?')} p.{r.get('page','?')}] {r['content'][:200]}")
+                    sources.append({"source": r.get("source", ""), "page": str(r.get("page", "?"))})
+        else:
+            lines.append(
+                "HAZOP analysis requires a specific tag. "
+                "Example: 'HAZOP for P-101' or 'what happens if V-201 fails?'"
             )
 
     else:

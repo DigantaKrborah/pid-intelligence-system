@@ -129,6 +129,22 @@ def delete_document(document_id: str) -> tuple[bool, str]:
     return False, data.get("detail", data.get("error", "Delete failed"))
 
 
+def list_unit_tags(unit_id: str, document_id: str | None = None) -> list[dict]:
+    params = {"document_id": document_id} if document_id else {}
+    status, data = _get(f"/api/v1/tags/list/{unit_id}", params)
+    return data if status == 200 and isinstance(data, list) else []
+
+
+def patch_tag(tag_id: str, tag_type: str | None = None, description: str | None = None) -> bool:
+    body: dict = {}
+    if tag_type is not None:
+        body["tag_type"] = tag_type
+    if description is not None:
+        body["description"] = description
+    status, _ = _patch(f"/api/v1/tags/{tag_id}", json=body)
+    return status == 200
+
+
 def upload_document(unit_id: str, doc_type: str, file) -> tuple[bool, dict]:
     status, data = _post(
         "/api/v1/upload/document",
