@@ -25,23 +25,33 @@ if not docs:
     st.info("No drawings uploaded yet for this unit.")
 else:
     for doc in docs:
-        col_name, col_status, col_tags, col_pages, col_del = st.columns([4, 2, 1, 1, 1])
-        col_name.markdown(
-            f'<span style="font-family:\'Roboto Mono\',monospace;font-size:12px;'
-            f'color:#0F172A">{doc["filename"]}</span>',
-            unsafe_allow_html=True,
-        )
-        col_status.markdown(status_badge(doc["processing_status"]), unsafe_allow_html=True)
-        col_tags.caption(f'{doc["tags_extracted"]} tags')
-        col_pages.caption(f'{doc["page_count"]} pg')
-        if col_del.button("🗑️", key=f"del_{doc['document_id']}",
-                          help=f"Delete {doc['filename']}"):
-            ok, msg = delete_document(doc["document_id"])
-            if ok:
-                st.success(f"Deleted **{msg}**")
-                st.rerun()
-            else:
-                st.error(f"Delete failed: {msg}")
+        with st.container(border=True):
+            col_info, col_meta, col_del = st.columns([5, 3, 1])
+
+            col_info.markdown(
+                f'<p style="margin:0;font-family:\'Roboto Mono\',monospace;'
+                f'font-size:12px;font-weight:600;color:#0F172A;word-break:break-all">'
+                f'{doc["filename"]}</p>',
+                unsafe_allow_html=True,
+            )
+
+            with col_meta:
+                st.markdown(status_badge(doc["processing_status"]), unsafe_allow_html=True)
+                st.caption(f'{doc["tags_extracted"]} tags &nbsp;·&nbsp; {doc["page_count"]} pages')
+
+            with col_del:
+                if st.button(
+                    "🗑️ Delete",
+                    key=f"del_{doc['document_id']}",
+                    help=f"Delete {doc['filename']}",
+                    use_container_width=True,
+                ):
+                    ok, msg = delete_document(doc["document_id"])
+                    if ok:
+                        st.success(f"Deleted **{msg}**")
+                        st.rerun()
+                    else:
+                        st.error(f"Delete failed: {msg}")
 
 st.divider()
 
