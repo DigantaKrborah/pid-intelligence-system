@@ -50,6 +50,11 @@ with st.sidebar:
     st.page_link("pages/5_documents.py", label="📄 Documents")
     st.page_link("pages/6_incidents.py", label="🚨 Incidents")
     st.divider()
+    st.page_link("pages/7_tags.py",     label="✏️ Tag Corrections")
+    st.page_link("pages/8_export.py",   label="📋 Equipment Register")
+    st.page_link("pages/9_alarms.py",   label="⚠️ Alarm & Interlocks")
+    st.page_link("pages/10_lines.py",   label="🔀 Process Line List")
+    st.divider()
     if st.button("🐛 Report Bug", use_container_width=True):
         st.session_state["show_bug_report"] = True
 
