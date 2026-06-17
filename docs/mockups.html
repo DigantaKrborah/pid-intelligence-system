@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P&ID Intelligence System — UI Mockups</title>
+<style>
+  :root {
+    --bg:        #0F1117;
+    --surface:   #1E2130;
+    --surface2:  #262B3D;
+    --border:    #2D3748;
+    --primary:   #4F8EF7;
+    --primary-dim:#1E3A6E;
+    --success:   #22C55E;
+    --warning:   #F59E0B;
+    --error:     #EF4444;
+    --txt:       #F1F5F9;
+    --txt2:      #94A3B8;
+    --pump:      #3B82F6;
+    --vessel:    #6B7280;
+    --valve:     #F97316;
+    --instr:     #14B8A6;
+    --exchanger: #22C55E;
+    --compress:  #8B5CF6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #080B12; font-family: Inter, system-ui, sans-serif; color: var(--txt); font-size: 14px; }
+  code, .tag { font-family: 'Roboto Mono', monospace; }
+
+  /* ── Screen nav ── */
+  .screen-nav { display:flex; gap:6px; padding:12px 16px; background:#080B12; border-bottom:1px solid var(--border); flex-wrap:wrap; position:sticky; top:0; z-index:100; }
+  .screen-btn { padding:6px 14px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--txt2); cursor:pointer; font-size:12px; transition:all .15s; }
+  .screen-btn:hover { background:var(--surface2); color:var(--txt); }
+  .screen-btn.active { background:var(--primary); border-color:var(--primary); color:#fff; }
+
+  /* ── Shell ── */
+  .screen { display:none; height:calc(100vh - 53px); }
+  .screen.visible { display:flex; }
+  .sidebar { width:240px; min-width:240px; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; padding:16px 0; overflow-y:auto; }
+  .main { flex:1; overflow-y:auto; padding:24px 28px; background:var(--bg); }
+
+  /* ── Sidebar components ── */
+  .sb-logo { padding:0 16px 12px; display:flex; align-items:center; gap:8px; }
+  .sb-logo-icon { font-size:20px; }
+  .sb-logo-text { font-weight:700; font-size:16px; color:var(--txt); }
+  .sb-status { padding:0 16px 12px; font-size:11px; color:#22C55E; }
+  .sb-divider { height:1px; background:var(--border); margin:8px 0; }
+  .sb-label { padding:4px 16px; font-size:11px; color:var(--txt2); font-weight:600; text-transform:uppercase; letter-spacing:.06em; }
+  .sb-unit-btn { margin:4px 8px; padding:7px 10px; border-radius:6px; background:var(--surface2); border:1px solid var(--border); color:var(--txt); font-size:13px; display:flex; justify-content:space-between; align-items:center; cursor:pointer; }
+  .sb-new-unit { margin:4px 8px; padding:7px 10px; border-radius:6px; border:1px dashed var(--border); color:var(--primary); font-size:13px; text-align:center; cursor:pointer; }
+  .sb-nav { margin-top:4px; }
+  .sb-nav-item { padding:9px 16px; font-size:13px; color:var(--txt2); cursor:pointer; display:flex; align-items:center; gap:8px; border-left:3px solid transparent; transition:all .1s; }
+  .sb-nav-item:hover { background:var(--surface2); color:var(--txt); }
+  .sb-nav-item.active { color:var(--primary); background:rgba(79,142,247,.08); border-left-color:var(--primary); }
+  .sb-bug { margin:auto 8px 0; padding:8px 10px; border-radius:6px; border:1px solid var(--border); color:var(--txt2); font-size:12px; text-align:center; cursor:pointer; }
+  .sb-bug:hover { background:var(--surface2); }
+  .unit-dropdown { margin:4px 8px; border-radius:6px; border:1px solid var(--border); overflow:hidden; background:var(--surface2); }
+  .unit-dd-item { padding:8px 12px; font-size:12px; color:var(--txt2); cursor:pointer; display:flex; justify-content:space-between; }
+  .unit-dd-item:hover { background:var(--border); }
+  .unit-dd-item.selected { color:var(--primary); background:rgba(79,142,247,.1); }
+
+  /* ── Utility ── */
+  .page-header { margin-bottom:20px; }
+  .page-header h1 { font-size:22px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  .page-header .caption { color:var(--txt2); font-size:13px; margin-top:4px; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:16px; }
+  .card:hover { box-shadow:0 2px 8px rgba(0,0,0,.4); }
+  .grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
+  .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .metric-card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:16px; }
+  .metric-val { font-size:28px; font-weight:700; color:var(--txt); }
+  .metric-label { font-size:12px; color:var(--txt2); margin-top:4px; }
+  .btn { padding:8px 16px; border-radius:6px; border:none; cursor:pointer; font-size:13px; font-weight:500; display:inline-flex; align-items:center; gap:6px; }
+  .btn-primary { background:var(--primary); color:#fff; }
+  .btn-secondary { background:transparent; border:1px solid var(--primary); color:var(--primary); }
+  .btn-sm { padding:5px 10px; font-size:12px; }
+  .btn-full { width:100%; justify-content:center; }
+  .badge { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:20px; font-size:11px; font-weight:600; }
+  .badge-success { background:rgba(34,197,94,.15); color:var(--success); }
+  .badge-warning { background:rgba(245,158,11,.15); color:var(--warning); }
+  .badge-error { background:rgba(239,68,68,.15); color:var(--error); }
+  .badge-info { background:rgba(79,142,247,.15); color:var(--primary); }
+  .badge-gray { background:rgba(100,116,139,.15); color:var(--txt2); }
+  .badge-purple { background:rgba(139,92,246,.15); color:var(--compress); }
+  .type-badge { display:inline-flex; align-items:center; padding:2px 7px; border-radius:20px; font-size:11px; font-weight:600; }
+  .type-pump { background:rgba(59,130,246,.2); color:var(--pump); }
+  .type-vessel { background:rgba(107,114,128,.2); color:var(--vessel); }
+  .type-valve { background:rgba(249,115,22,.2); color:var(--valve); }
+  .type-instr { background:rgba(20,184,166,.2); color:var(--instr); }
+  .type-exchanger { background:rgba(34,197,94,.2); color:var(--exchanger); }
+  .chip { display:inline-flex; align-items:center; padding:4px 10px; border-radius:6px; background:var(--surface2); border:1px solid var(--border); font-family:'Roboto Mono',monospace; font-size:12px; color:var(--txt); cursor:pointer; margin:2px; }
+  .chip:hover { border-color:var(--primary); color:var(--primary); }
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; padding:10px 12px; font-size:12px; color:var(--txt2); font-weight:600; border-bottom:1px solid var(--border); text-transform:uppercase; letter-spacing:.04em; }
+  td { padding:11px 12px; font-size:13px; border-bottom:1px solid rgba(45,55,72,.5); vertical-align:middle; }
+  tr:last-child td { border-bottom:none; }
+  tr:hover td { background:rgba(255,255,255,.02); }
+  .divider { height:1px; background:var(--border); margin:16px 0; }
+  input[type=text], textarea, select { background:var(--surface2); border:1px solid var(--border); border-radius:6px; color:var(--txt); padding:8px 12px; font-size:13px; width:100%; outline:none; font-family:Inter,sans-serif; }
+  input[type=text]:focus, textarea:focus { border-color:var(--primary); }
+  .section-title { font-size:14px; font-weight:600; color:var(--txt2); margin-bottom:12px; text-transform:uppercase; letter-spacing:.05em; }
+  .row { display:flex; gap:12px; align-items:center; margin-bottom:12px; }
+  .flex-between { display:flex; justify-content:space-between; align-items:center; }
+
+  /* ── Graph canvas ── */
+  .graph-canvas { background:#080D1A; border-radius:8px; border:1px solid var(--border); position:relative; overflow:hidden; height:480px; }
+  .graph-svg { width:100%; height:100%; }
+  .node circle { stroke-width:2; transition:r .15s; }
+  .node.selected circle { stroke:#fff; stroke-width:3; filter:drop-shadow(0 0 8px rgba(79,142,247,.8)); }
+  .node text { font-family:'Roboto Mono',monospace; font-size:9px; fill:var(--txt); pointer-events:none; }
+  .link { stroke:rgba(148,163,184,.3); stroke-width:1.5; fill:none; }
+  .link.cross { stroke:rgba(249,115,22,.5); stroke-dasharray:5,3; }
+
+  /* ── Chat ── */
+  .chat-area { display:flex; flex-direction:column; gap:16px; max-width:760px; }
+  .chat-user { display:flex; justify-content:flex-end; }
+  .chat-user-bubble { background:var(--primary); color:#fff; padding:10px 14px; border-radius:12px 12px 2px 12px; max-width:70%; font-size:13px; }
+  .chat-ai { display:flex; justify-content:flex-start; }
+  .chat-ai-card { background:var(--surface); border:1px solid var(--border); border-radius:12px 12px 12px 2px; padding:14px 16px; max-width:90%; font-size:13px; line-height:1.6; }
+  .chat-input-bar { display:flex; gap:8px; align-items:center; margin-top:16px; padding:12px; background:var(--surface); border:1px solid var(--border); border-radius:8px; }
+  .chat-input-bar input { background:transparent; border:none; flex:1; font-size:13px; }
+  .sources-toggle { color:var(--txt2); font-size:12px; cursor:pointer; margin-top:8px; display:inline-flex; align-items:center; gap:4px; }
+  .sources-body { background:var(--surface2); border-radius:6px; padding:8px 10px; margin-top:6px; font-size:12px; color:var(--txt2); }
+
+  /* ── Upload zone ── */
+  .upload-zone { border:2px dashed var(--border); border-radius:8px; padding:40px; text-align:center; color:var(--txt2); cursor:pointer; transition:border-color .15s; }
+  .upload-zone:hover { border-color:var(--primary); color:var(--primary); }
+
+  /* ── Impact panel ── */
+  .impact-row { display:flex; align-items:center; gap:8px; padding:4px 0; }
+  .spinner { display:inline-block; width:10px; height:10px; border:2px solid rgba(79,142,247,.3); border-top-color:var(--primary); border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  /* ── Modal ── */
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.7); display:flex; align-items:center; justify-content:center; z-index:50; }
+  .modal { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:24px; width:440px; }
+  .modal h2 { font-size:16px; font-weight:700; margin-bottom:16px; }
+  .form-group { margin-bottom:14px; }
+  .form-label { font-size:12px; color:var(--txt2); margin-bottom:6px; display:block; }
+
+  /* ── Incidents ── */
+  .incident-card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:14px 16px; margin-bottom:10px; }
+  .incident-header { display:flex; justify-content:space-between; align-items:flex-start; }
+  .incident-title { font-weight:600; font-size:14px; margin-bottom:4px; }
+  .incident-desc { color:var(--txt2); font-size:12px; margin-bottom:8px; }
+  .incident-meta { font-size:11px; color:var(--txt2); }
+
+  /* ── Breadcrumb ── */
+  .breadcrumb { font-size:12px; color:var(--txt2); margin-bottom:16px; }
+  .breadcrumb span { color:var(--txt); }
+
+  /* ── Search ── */
+  .search-bar { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:10px 14px; display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+  .search-bar input { background:transparent; border:none; flex:1; font-size:14px; color:var(--txt); }
+  .filter-row { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+  .filter-chip { padding:5px 12px; border-radius:20px; border:1px solid var(--border); font-size:12px; color:var(--txt2); cursor:pointer; }
+  .filter-chip.active { background:rgba(79,142,247,.15); border-color:var(--primary); color:var(--primary); }
+  .result-card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:8px; cursor:pointer; transition:border-color .12s; }
+  .result-card:hover, .result-card.selected { border-color:var(--primary); }
+  .result-tag { font-family:'Roboto Mono',monospace; font-size:16px; font-weight:700; margin-bottom:4px; }
+  .result-meta { display:flex; gap:8px; align-items:center; margin-bottom:4px; }
+  .result-desc { font-size:12px; color:var(--txt2); }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width:6px; height:6px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+</style>
+</head>
+<body>
+
+<!-- Screen nav -->
+<nav class="screen-nav">
+  <button class="screen-btn active" onclick="show(0)">1 · Dashboard</button>
+  <button class="screen-btn" onclick="show(1)">2 · Unit Management</button>
+  <button class="screen-btn" onclick="show(2)">3 · Upload P&IDs</button>
+  <button class="screen-btn" onclick="show(3)">4 · Equipment Search</button>
+  <button class="screen-btn" onclick="show(4)">5 · Process Graph ⭐</button>
+  <button class="screen-btn" onclick="show(5)">6 · NL Chat</button>
+  <button class="screen-btn" onclick="show(6)">7 · Documents</button>
+  <button class="screen-btn" onclick="show(7)">8 · Incidents</button>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN 1 — DASHBOARD
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="screen visible" id="s0">
+  <aside class="sidebar">
+    <div class="sb-logo"><span class="sb-logo-icon">⚙️</span><span class="sb-logo-text">P&ID Intel</span></div>
+    <div class="sb-status">🟢 API Online</div>
+    <div class="sb-divider"></div>
+    <div style="padding:0 8px 8px">
+      <div class="sb-unit-btn">CDU <span style="color:var(--txt2)">▾</span></div>
+      <div class="sb-new-unit">＋ New Unit</div>
+    </div>
+    <div class="sb-divider"></div>
+    <nav class="sb-nav">
+      <div class="sb-nav-item active">📊 Dashboard</div>
+      <div class="sb-nav-item">📤 Upload P&IDs</div>
+      <div class="sb-nav-item">🔍 Search Tags</div>
+      <div class="sb-nav-item">🕸️ Process Graph</div>
+      <div class="sb-nav-item">💬 Ask a Question</div>
+      <div class="sb-nav-item">📄 Documents</div>
+      <div class="sb-nav-item">🚨 Incidents</div>
+    </nav>
+    <div class="sb-bug">🐛 Report Bug</div>
+  </aside>
+  <main class="main">
+    <div class="page-header">
+      <h1>⚙️ CDU</h1>
+      <div class="caption">Crude Distillation Unit</div>
+    </div>
+    <div class="grid-4">
+      <div class="metric-card"><div class="metric-val">247</div><div class="metric-label">Equipment Tags</div></div>
+      <div class="metric-card"><div class="metric-val">18</div><div class="metric-label">P&ID Sheets</div></div>
+      <div class="metric-card"><div class="metric-val">5</div><div class="metric-label">SOPs Indexed</div></div>
+      <div class="metric-card"><div class="metric-val">24</div><div class="metric-label">Graph Nodes</div></div>
+    </div>
+    <div class="grid-2" style="margin-bottom:20px">
+      <div>
+        <div class="section-title">Quick Actions</div>
+        <div class="grid-3">
+          <button class="btn btn-primary btn-full">📤 Upload P&IDs</button>
+          <button class="btn btn-secondary btn-full">🔍 Search Tags</button>
+          <button class="btn btn-secondary btn-full">💬 Ask a Question</button>
+        </div>
+        <div class="divider"></div>
+        <div class="section-title">Recent Uploads</div>
+        <div class="card" style="padding:0">
+          <table>
+            <thead><tr><th>Filename</th><th>Pages</th><th>Tags</th><th>Status</th><th>Uploaded</th></tr></thead>
+            <tbody>
+              <tr><td><code class="tag">P&ID-CDU-006.pdf</code></td><td>8</td><td>42</td><td><span class="badge badge-success">✓ Completed</span></td><td style="color:var(--txt2)">2h ago</td></tr>
+              <tr><td><code class="tag">P&ID-CDU-007.pdf</code></td><td>—</td><td>—</td><td><span class="badge badge-info"><span class="spinner"></span> Processing</span></td><td style="color:var(--txt2)">14m ago</td></tr>
+              <tr><td><code class="tag">P&ID-CDU-005.pdf</code></td><td>12</td><td>67</td><td><span class="badge badge-success">✓ Completed</span></td><td style="color:var(--txt2)">1d ago</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div>
+        <div class="section-title">Graph</div>
+        <div class="card" style="text-align:center">
+          <div class="grid-2" style="margin-bottom:12px">
+            <div class="metric-card" style="padding:10px"><div class="metric-val" style="font-size:20px">24</div><div class="metric-label">Nodes</div></div>
+            <div class="metric-card" style="padding:10px"><div class="metric-val" style="font-size:20px">31</div><div class="metric-label">Edges</div></div>
+          </div>
+          <button class="btn btn-secondary btn-full">🕸️ View Graph</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN 2 — UNIT MANAGEMENT
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="screen" id="s1">
+  <aside class="sidebar">
+    <div class="sb-logo"><span class="sb-logo-icon">⚙️</span><span class="sb-logo-text">P&ID Intel</span></div>
+    <div class="sb-status">🟢 API Online</div>
+    <div class="sb-divider"></div>
+    <div style="padding:0 8px 8px">
+      <div class="sb-unit-btn" style="color:var(--txt2)">— Select Unit — <span>▾</span></div>
+      <div class="unit-dropdown">
+        <div class="unit-dd-item">CDU <span>247 tags</span></div>
+        <div class="unit-dd-item">VDU <span>183 tags</span></div>
+        <div class="unit-dd-item">HCU <span>312 tags</span></div>
+        <div class="unit-dd-item">FCC <span>149 tags</span></div>
+        <div class="unit-dd-item" style="color:var(--primary)">＋ New Unit</div>
+      </div>
+    </div>
+    <div class="sb-bug">🐛 Report Bug</div>
+  </aside>
+  <main class="main">
+    <div class="page-header">
+      <h1>Welcome to P&ID Intelligence System</h1>
+      <div class="caption">Select a unit from the sidebar, or create a new one below.</div>
+    </div>
+    <div class="grid-3" style="margin-bottom:24px">
+      <div class="metric-card"><div class="metric-val">4</div><div class="metric-label">Total Units</div></div>
+      <div class="metric-card"><div class="metric-val">891</div><div class="metric-label">Total Tags</div></div>
+      <div class="metric-card"><div class="metric-val">67</div><div class="metric-label">P&ID Sheets</div></div>
+    </div>
+    <div class="grid-2">
+      <div>
+        <div class="section-title">Available Units</div>
+        <div style="display:grid;gap:10px">
+          <div class="card flex-between" style="padding:14px 16px">
+            <div><div style="font-weight:700;font-size:15px;margin-bottom:2px">CDU</div><div style="font-size:12px;color:var(--txt2)">Crude Distillation Unit · 247 tags · 18 sheets</div></div>
+            <div style="display:flex;gap:8px;align-items:center"><span class="badge badge-success">Active</span><button class="btn btn-primary btn-sm">Open</button></div>
+          </div>
+          <div class="card flex-between" style="padding:14px 16px">
+            <div><div style="font-weight:700;font-size:15px;margin-bottom:2px">VDU</div><div style="font-size:12px;color:var(--txt2)">Vacuum Distillation Unit · 183 tags · 14 sheets</div></div>
+            <div style="display:flex;gap:8px;align-items:center"><span class="badge badge-success">Active</span><button class="btn btn-primary btn-sm">Open</button></div>
+          </div>
+          <div class="card flex-between" style="padding:14px 16px">
+            <div><div style="font-weight:700;font-size:15px;margin-bottom:2px">HCU</div><div style="font-size:12px;color:var(--txt2)">Hydrocracking Unit · 312 tags · 24 sheets</div></div>
+            <div style="display:flex;gap:8px;align-items:center"><span class="badge badge-success">Active</span><button class="btn btn-primary btn-sm">Open</button></div>
+          </div>
+          <div class="card flex-between" style="padding:14px 16px">
+            <div><div style="font-weight:700;font-size:15px;margin-bottom:2px">FCC</div><div style="font-size:12px;color:var(--txt2)">Fluid Catalytic Cracker · 149 tags · 11 sheets</div></div>
+            <div style="display:flex;gap:8px;align-items:center"><span class="badge badge-success">Active</span><button class="btn btn-primary btn-sm">Open</button></div>
+          </div>
+        </div>
+      </div>
+      <!-- Create Unit Modal -->
+      <div>
+        <div class="section-title">Create New Unit</div>
+        <div class="card">
+          <h2 style="font-size:15px;font-weight:700;margin-bottom:16px">New Process Unit</h2>
+          <div class="form-group"><label class="form-label">Unit Name *</label><input type="text" value="HCU" placeholder="e.g. CDU, VDU, HCU"></div>
+          <div class="form-group"><label class="form-label">Description (optional)</label><textarea rows="3" placeholder="Brief description of this unit...">Hydrocracking unit — heavy oil conversion</textarea></div>
+          <div class="row" style="margin-top:16px">
+            <button class="btn btn-primary" style="flex:1">✅ Create Unit</button>
+            <button class="btn btn-secondary" style="flex:1">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN 3 — UPLOAD
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="screen" id="s2">
+  <aside class="sidebar">
+    <div class="sb-logo"><span class="sb-logo-icon">⚙️</span><span class="sb-logo-text">P&ID Intel</span></div>
+    <div class="sb-status">🟢 API Online</div>
+    <div class="sb-divider"></div>
+    <div style="padding:0 8px 8px"><div class="sb-unit-btn">CDU <span style="color:var(--txt2)">▾</span></div></div>
+    <div class="sb-divider"></div>
+    <nav class="sb-nav">
+      <div class="sb-nav-item">📊 Dashboard</div>
+      <div class="sb-nav-item active">📤 Upload P&IDs</div>
+      <div class="sb-nav-item">🔍 Search Tags</div>
+      <div class="sb-nav-item">🕸️ Process Graph</div>
+      <div class="sb-nav-item">💬 Ask a Question</div>
+      <div class="sb-nav-item">📄 Documents</div>
+      <div class="sb-nav-item">🚨 Incidents</div>
+    </nav>
+    <div class="sb-bug">🐛 Report Bug</div>
+  </aside>
+  <main class="main">
+    <div class="breadcrumb">CDU / <span>Upload P&IDs</span></div>
+    <div class="page-header"><h1>📤 Upload P&ID Sheets</h1><div class="caption">Unit: CDU — Crude Distillation Unit</div></div>
+
+    <div class="card" style="margin-bottom:16px;padding:0">
+      <table>
+        <thead><tr><th>Filename</th><th>Size</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><code class="tag">P&ID-CDU-007.pdf</code></td><td>4.2 MB</td><td><span class="badge badge-success">✅ Ready</span></td></tr>
+          <tr><td><code class="tag">P&ID-CDU-008.pdf</code></td><td>6.8 MB</td><td><span class="badge badge-success">✅ Ready</span></td></tr>
+          <tr><td><code class="tag">P&ID-CDU-009.pdf</code></td><td>51.0 MB</td><td><span class="badge badge-error">⚠️ Too large</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <button class="btn btn-primary" style="margin-bottom:24px;padding:10px 24px;font-size:14px">🚀 Upload & Process</button>
+
+    <div class="divider"></div>
+    <div class="section-title">Processing Status</div>
+    <div class="card" style="padding:0">
+      <table>
+        <thead><tr><th>Filename</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><code class="tag">P&ID-CDU-007.pdf</code></td><td><span class="badge badge-success">✅ Done — 42 tags from 8 pages</span></td></tr>
+          <tr><td><code class="tag">P&ID-CDU-008.pdf</code></td><td><span class="badge badge-info"><span class="spinner"></span> Extracting tags...</span></td></tr>
+          <tr><td><code class="tag">P&ID-CDU-006.pdf</code></td><td><span class="badge badge-purple">🕸️ Building graph...</span></td></tr>
+          <tr><td><code class="tag">P&ID-CDU-005.pdf</code></td><td><span class="badge badge-gray">⏳ Queued</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN 4 — SEARCH
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="screen" id="s3">
+  <aside class="sidebar">
+    <div class="sb-logo"><span class="sb-logo-icon">⚙️</span><span class="sb-logo-text">P&ID Intel</span></div>
+    <div class="sb-status">🟢 API Online</div>
+    <div class="sb-divider"></div>
+    <div style="padding:0 8px 8px"><div class="sb-unit-btn">CDU <span style="color:var(--txt2)">▾</span></div></div>
+    <div class="sb-divider"></div>
+    <nav class="sb-nav">
+      <div class="sb-nav-item">📊 Dashboard</div>
+      <div class="sb-nav-item">📤 Upload P&IDs</div>
+      <div class="sb-nav-item active">🔍 Search Tags</div>
+      <div class="sb-nav-item">🕸️ Process Graph</div>
+      <div class="sb-nav-item">💬 Ask a Question</div>
+      <div class="sb-nav-item">📄 Documents</div>
+      <div class="sb-nav-item">🚨 Incidents</div>
+    </nav>
+    <div class="sb-bug">🐛 Report Bug</div>
+  </aside>
+  <main class="main">
+    <div class="page-header"><h1>🔍 Equipment Tag Search</h1></div>
+    <div class="search-bar" style="margin-bottom:12px"><span style="color:var(--txt2)">🔍</span><input type="text" value="P-101" style="background:transparent;border:none;font-size:15px"></div>
+    <div class="filter-row">
+      <span class="filter-chip active">All Units</span><span class="filter-chip">CDU</span><span class="filter-chip">VDU</span><span class="filter-chip">HCU</span>
+      <span style="margin-left:8px"></span>
+      <span class="filter-chip active">All Types</span><span class="filter-chip">Pump</span><span class="filter-chip">Vessel</span><span class="filter-chip">Valve</span><span class="filter-chip">Instrument</span>
+    </div>
+    <div style="display:grid;grid-template-columns:2fr 3fr;gap:16px">
+      <div>
+        <div style="font-size:12px;color:var(--txt2);margin-bottom:10px">4 result(s)</div>
+        <div class="result-card selected">
+          <div class="result-meta"><span class="result-tag">P-101</span><span class="type-badge type-pump">pump</span><span class="badge badge-info" style="font-size:10px">CDU</span></div>
+          <div class="result-desc">Feed pump — crude oil transfer</div>
+          <button class="btn btn-secondary btn-sm" style="margin-top:8px">View details</button>
+        </div>
+        <div class="result-card">
+          <div class="result-meta"><span class="result-tag">P-102</span><span class="type-badge type-pump">pump</span><span class="badge badge-info" style="font-size:10px">CDU</span></div>
+          <div class="result-desc">Reflux pump</div>
+        </div>
+        <div class="result-card">
+          <div class="result-meta"><span class="result-tag">P-103</span><span class="type-badge type-pump">pump</span><span class="badge badge-info" style="font-size:10px">CDU</span></div>
+          <div class="result-desc">Bottoms product pump</div>
+        </div>
+        <div class="result-card">
+          <div class="result-meta"><span class="result-tag">P-201</span><span class="type-badge type-pump">pump</span><span class="badge badge-info" style="font-size:10px">CDU</span></div>
+          <div class="result-desc">Overhead receiver pump</div>
+        </div>
+      </div>
+      <!-- Detail panel -->
+      <div class="card">
+        <h2 style="font-size:18px;font-weight:700;margin-bottom:4px">⚙️ P-101</h2>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+          <span class="type-badge type-pump">Centrifugal Pump</span>
+          <span class="badge badge-info">CDU</span>
+        </div>
+        <p style="color:var(--txt2);font-size:13px;margin-bottom:14px">Feed pump — transfers crude oil from storage tanks to the preheat train</p>
+        <div class="section-title">Connected Equipment</div>
+        <div style="margin-bottom:6px;font-size:12px;color:var(--txt2)">⬆️ Upstream:</div>
+        <div style="margin-bottom:12px"><span class="chip">V-101</span><span class="chip">FCV-101</span></div>
+        <div style="margin-bottom:6px;font-size:12px;color:var(--txt2)">⬇️ Downstream:</div>
+        <div style="margin-bottom:14px"><span class="chip">E-101</span><span class="chip">E-102</span><span class="chip">TIC-301</span></div>
+        <div style="font-size:12px;color:var(--txt2);margin-bottom:14px">Source: page 3</div>
+        <div class="row" style="gap:8px;margin-bottom:16px">
+          <button class="btn btn-secondary" style="flex:1">🕸️ View in Graph</button>
+          <button class="btn btn-primary" style="flex:1">💬 Ask about this</button>
+        </div>
+        <div class="divider"></div>
+        <div class="section-title">⚠️ Impact Analysis</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <span class="badge badge-warning">🟡 Medium Severity</span>
+          <span style="font-size:12px;color:var(--txt2)">3 affected downstream</span>
+        </div>
+        <div class="impact-row"><span style="color:var(--pump);font-size:11px">Pumps:</span><span class="chip" style="font-size:11px">P-201</span></div>
+        <div class="impact-row"><span style="color:var(--vessel);font-size:11px">Vessels:</span><span class="chip" style="font-size:11px">V-201</span></div>
+        <div class="impact-row"><span style="color:var(--exchanger);font-size:11px">Exchangers:</span><span class="chip" style="font-size:11px">E-301</span></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN 5 — GRAPH
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="screen" id="s4">
+  <aside class="sidebar">
+    <div class="sb-logo"><span class="sb-logo-icon">⚙️</span><span class="sb-logo-text">P&ID Intel</span></div>
+    <div class="sb-status">🟢 API Online</div>
+    <div class="sb-divider"></div>
+    <div style="padding:0 8px 8px"><div class="sb-unit-btn">CDU <span style="color:var(--txt2)">▾</span></div></div>
+    <div class="sb-divider"></div>
+    <nav class="sb-nav">
+      <div class="sb-nav-item">📊 Dashboard</div>
+      <div class="sb-nav-item">📤 Upload P&IDs</div>
+      <div class="sb-nav-item">🔍 Search Tags</div>
+      <div class="sb-nav-item active">🕸️ Process Graph</div>
+      <div class="sb-nav-item">💬 Ask a Question</div>
+      <div class="sb-nav-item">📄 Documents</div>
+      <div class="sb-nav-item">🚨 Incidents</div>
+    </nav>
+    <div class="sb-bug">🐛 Report Bug</div>
+  </aside>
+  <main class="main" style="padding:16px 20px">
+    <div class="page-header" style="margin-bottom:12px"><h1>🕸️ Process Graph</h1></div>
+    <div class="row" style="margin-bottom:12px;gap:12px;flex-wrap:wrap">
+      <input type="text" value="P-101" placeholder="Highlight tag" style="width:140px">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--txt2)"><input type="checkbox" checked> Cross-unit</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--txt2)"><input type="checkbox" checked> Physics</label>
+      <span style="font-size:12px;color:var(--txt2)">Node size: <input type="range" min="10" max="40" value="18" style="width:80px;vertical-align:middle"></span>
+    </div>
+    <div style="display:grid;grid-template-columns:3fr 1fr;gap:12px">
+      <div class="graph-canvas">
+        <svg class="graph-svg" viewBox="0 0 700 470">
+          <defs>
+            <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L6,3 z" fill="rgba(148,163,184,0.4)"/>
+            </marker>
+            <filter id="glow"><feGaussianBlur stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          </defs>
+          <!-- edges -->
+          <line class="link" x1="180" y1="200" x2="280" y2="200" marker-end="url(#arrow)"/>
+          <line class="link" x1="310" y1="200" x2="420" y2="170" marker-end="url(#arrow)"/>
+          <line class="link" x1="310" y1="200" x2="420" y2="230" marker-end="url(#arrow)"/>
+          <line class="link" x1="180" y1="200" x2="180" y2="310" marker-end="url(#arrow)"/>
+          <line class="link" x1="180" y1="340" x2="280" y2="360" marker-end="url(#arrow)"/>
+          <line class="link" x1="310" y1="360" x2="420" y2="360" marker-end="url(#arrow)"/>
+          <line class="link" x1="450" y1="360" x2="540" y2="300" marker-end="url(#arrow)"/>
+          <line class="link" x1="450" y1="170" x2="540" y2="130" marker-end="url(#arrow)"/>
+          <line class="link" x1="450" y1="230" x2="540" y2="260" marker-end="url(#arrow)"/>
+          <line class="link" x1="540" y1="130" x2="610" y2="100" marker-end="url(#arrow)"/>
+          <line class="link" x1="60" y1="200" x2="150" y2="200" marker-end="url(#arrow)"/>
+          <line class="link" x1="60" y1="130" x2="150" y2="180" marker-end="url(#arrow)"/>
+          <!-- cross-unit dashed -->
+          <line class="link cross" x1="540" y1="300" x2="630" y2="350" marker-end="url(#arrow)"/>
+          <line class="link cross" x1="540" y1="260" x2="630" y2="410" marker-end="url(#arrow)"/>
+          <!-- nodes -->
+          <!-- V-101 vessel (gray hexagon) -->
+          <polygon points="60,180 80,168 100,168 120,180 100,192 80,192" fill="rgba(107,114,128,0.2)" stroke="#6B7280" stroke-width="2"/>
+          <text x="90" y="210" text-anchor="middle" font-family="'Roboto Mono',monospace" font-size="9" fill="#94A3B8">V-101</text>
+          <!-- FCV-101 valve (orange diamond) -->
+          <polygon points="60,115 75,130 60,145 45,130" fill="rgba(249,115,22,0.2)" stroke="#F97316" stroke-width="1.5"/>
+          <text x="60" y="158" text-anchor="middle" font-family="'Roboto Mono',monospace" font-size="8" fill="#94A3B8">FCV-101</text>
+          <!-- P-101 pump — SELECTED (blue circle, glow) -->
+          <circle cx="180" cy="200" r="22" fill="rgba(59,130,246,0.25)" stroke="#fff" stroke-width="3" filter="url(#glow)"/>
+          <text x="180" y="204" text-anchor="middle" font-family="'Roboto Mono',monospace" font-size="9" fill="#fff">P-101</text>
+          <!-- LIC-201 instrument (teal square) -->
+          <rect x="168" y="300" width="24" height="24" fill="rgba(20,184,166,0.2)" stroke="#14B8A6" stroke-width="1.5" rx="2"/>
+          <text x="180" y="340" text-anchor="middle" font-family="'Roboto Mono',monospace" font-size="8" fill="#94A3B8">LIC-201</text>
+          <!-- T-101 column (large gray hexagon) -->
+          <polygon points="295,170 325,155 355,170 355,210 325,225 295,210" fill="rgba(107,114,128,0.2)" stroke="#6B7280" stroke-width="2"/>
+          <text x="325" y="245" text-anchor="middle" font-family="'Roboto Mono',monospace" font-size="9" fill="#94A3B8">T-101</text>
+          <!-- LV-101 valve -->
+          <polygon points="295,350 310,365 295,380 280,365" fill="rgba(249,115,22,0.2)" stroke="#F97316" stroke-width="1.5"/>
+          <text x="295" y="394" text-anchor="middle" font-family="'Roboto Mono',monospace" font-size="8" fill="#94A3B8">LV-101</text>
+          <!-- P-103 pump -->
+          <circle cx="435" cy="360" r="16" fill="rgba(59,130,246,0.2)" stroke="#3B82F6" stroke-width="2"/>
+          <text x="435" y="388" text-anchor="middle" font-family="'Roboto Mono',monospace" font-size="8" fill="#94A3B8">P-103</text>
+          <!-- E-101 exchanger (green rect) -->
+          <rect x="420" y="158" width="32" height="18" fill="rgba(34,197,94,0.2)" stroke="#22C55E" stroke-width="1.5" rx="3"/>
+          <text x="436" y="192" text-anchor="middle" font-family="'Roboto Mono',monospace" font-size="8" fill="#94A3B8">E-101</text>
+          <!-- E-102 exchanger -->
+          <rect x="420" y="222" width="32" height="18" fill="rgba(34,197,94,0.2)" stroke="#22C55E" stroke-width="1.5" rx="3"/>
+          <text x="436" y="256" text-anchor="middle" font-family="'Roboto Mono',monospace" font-size="8" fill="#94A3B8">E-102</text>
+          <!-- TIC-301 instrument -->
+          <rect x="528" y="122" width="24" height="24" fill="rgba(20,184,166,0.2)" stroke="#14B8A6" stroke-width="1.5" rx="2"/>
+          <text x="540" y="158" text-anchor="middle" font-family="'Roboto Mono',monospace" font-size="8" fill="#94A3B8">TIC-301</text>
+          <!-- FIC-101 instrument -->
+          <rect x="528" y="250" width="24" height="24" fill="rgba(20,184,166,0.2)" stroke="#14B8A6" stroke-width="1.5" rx="2"/>
+          <text x="540" y="286" text-anchor="middle" font-family="'Roboto Mono',monospace" font-size="8" fill="#94A3B8">FIC-101</text>
+          <!-- P-201 pump -->
+          <circle cx="540" cy="300" r="16" fill="rgba(59,130,246,0.2)" stroke="#3B82F6" stroke-width="2"/>
+          <text x="540" y="328" text-anchor="middle" font-family="'Roboto Mono',monospace" font-size="8" fill="#94A3B8">P-201</text>
+          <!-- FCV-201 valve -->
+          <polygon points="610,90 625,105 610,120 595,105" fill="rgba(249,115,22,0.2)" stroke="#F97316" stroke-width="1.5"/>
+          <text x="610" y="132" text-anchor="middle" font-family="'Roboto Mono',monospace" font-size="8" fill="#94A3B8">FCV-201</text>
+          <!-- cross-unit nodes (dotted border) -->
+          <circle cx="635" cy="350" r="16" fill="rgba(107,114,128,0.15)" stroke="#6B7280" stroke-width="1.5" stroke-dasharray="4,2"/>
+          <text x="635" y="375" text-anchor="middle" font-family="'Roboto Mono',monospace" font-size="7" fill="#64748B">V-301</text>
+          <text x="635" y="383" text-anchor="middle" font-size="7" fill="#64748B">VDU</text>
+          <circle cx="635" cy="415" r="14" fill="rgba(59,130,246,0.1)" stroke="#3B82F6" stroke-width="1.5" stroke-dasharray="4,2"/>
+          <text x="635" y="438" text-anchor="middle" font-family="'Roboto Mono',monospace" font-size="7" fill="#64748B">P-401</text>
+          <text x="635" y="446" text-anchor="middle" font-size="7" fill="#64748B">VDU</text>
+          <!-- legend corner -->
+          <rect x="10" y="410" width="140" height="55" fill="rgba(30,33,48,0.9)" rx="4" stroke="#2D3748" stroke-width="1"/>
+          <circle cx="24" cy="422" r="5" fill="rgba(59,130,246,0.3)" stroke="#3B82F6" stroke-width="1.5"/>
+          <text x="34" y="426" font-size="8" fill="#94A3B8">Pump</text>
+          <polygon points="45,420 52,427 45,434 38,427" fill="rgba(249,115,22,0.2)" stroke="#F97316" stroke-width="1"/>
+          <text x="58" y="426" font-size="8" fill="#94A3B8">Valve</text>
+          <rect x="70" y="418" width="12" height="8" fill="rgba(34,197,94,0.2)" stroke="#22C55E" stroke-width="1" rx="1"/>
+          <text x="88" y="426" font-size="8" fill="#94A3B8">Exchanger</text>
+          <polygon points="24,440 34,435 44,440 34,445" fill="rgba(107,114,128,0.2)" stroke="#6B7280" stroke-width="1"/>
+          <text x="50" y="444" font-size="8" fill="#94A3B8">Vessel</text>
+          <rect x="70" y="438" width="10" height="10" fill="rgba(20,184,166,0.2)" stroke="#14B8A6" stroke-width="1" rx="1"/>
+          <text x="86" y="446" font-size="8" fill="#94A3B8">Instrument</text>
+          <line x1="10" y1="455" x2="40" y2="455" stroke="rgba(249,115,22,0.6)" stroke-width="1" stroke-dasharray="3,2"/>
+          <text x="46" y="459" font-size="8" fill="#94A3B8">Cross-unit</text>
+        </svg>
+        <div style="position:absolute;bottom:10px;right:12px;display:flex;gap:16px;font-size:11px;color:var(--txt2)">
+          <span>Nodes: <strong style="color:var(--txt)">24</strong></span>
+          <span>Edges: <strong style="color:var(--txt)">31</strong></span>
+          <span style="color:var(--txt2)">Click a node to inspect</span>
+        </div>
+      </div>
+      <!-- Detail panel -->
+      <div class="card">
+        <h3 style="font-size:15px;font-weight:700;margin-bottom:4px">⚙️ P-101</h3>
+        <div class="divider" style="margin:10px 0"></div>
+        <div style="font-size:12px;color:var(--txt2);margin-bottom:6px">⬆️ Upstream:</div>
+        <div style="margin-bottom:12px"><button class="btn btn-secondary btn-sm" style="margin:2px 2px 2px 0">V-101</button><button class="btn btn-secondary btn-sm" style="margin:2px">FCV-101</button></div>
+        <div style="font-size:12px;color:var(--txt2);margin-bottom:6px">⬇️ Downstream:</div>
+        <div style="margin-bottom:12px"><button class="btn btn-secondary btn-sm" style="margin:2px 2px 2px 0">E-101</button><button class="btn btn-secondary btn-sm" style="margin:2px">E-102</button></div>
+        <div class="divider" style="margin:10px 0"></div>
+        <div style="margin-bottom:8px"><span class="badge badge-warning">🟡 Medium Impact</span></div>
+        <div style="font-size:12px;color:var(--txt2);margin-bottom:12px">3 affected downstream</div>
+        <div class="divider" style="margin:10px 0"></div>
+        <button class="btn btn-primary btn-full" style="font-size:12px">💬 Ask about this tag</button>
+        <div style="margin-top:16px">
+          <div class="section-title" style="font-size:10px;margin-bottom:8px">Legend</div>
+          <div style="display:flex;flex-direction:column;gap:4px;font-size:11px">
+            <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--pump);margin-right:5px"></span>Pump</span>
+            <span><span style="display:inline-block;width:8px;height:8px;background:var(--vessel);margin-right:5px;opacity:.6"></span>Vessel</span>
+            <span><span style="display:inline-block;width:8px;height:8px;transform:rotate(45deg);background:var(--valve);margin-right:5px"></span>Valve</span>
+            <span><span style="display:inline-block;width:8px;height:8px;background:var(--instr);margin-right:5px"></span>Instrument</span>
+            <span><span style="display:inline-block;width:8px;height:8px;background:var(--exchanger);margin-right:5px"></span>Exchanger</span>
+            <span style="color:var(--txt2)">- - cross-unit</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN 6 — CHAT
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="screen" id="s5">
+  <aside class="sidebar">
+    <div class="sb-logo"><span class="sb-logo-icon">⚙️</span><span class="sb-logo-text">P&ID Intel</span></div>
+    <div class="sb-status">🟢 API Online</div>
+    <div class="sb-divider"></div>
+    <div style="padding:0 8px 8px"><div class="sb-unit-btn">CDU <span style="color:var(--txt2)">▾</span></div></div>
+    <div class="sb-divider"></div>
+    <nav class="sb-nav">
+      <div class="sb-nav-item">📊 Dashboard</div>
+      <div class="sb-nav-item">📤 Upload P&IDs</div>
+      <div class="sb-nav-item">🔍 Search Tags</div>
+      <div class="sb-nav-item">🕸️ Process Graph</div>
+      <div class="sb-nav-item active">💬 Ask a Question</div>
+      <div class="sb-nav-item">📄 Documents</div>
+      <div class="sb-nav-item">🚨 Incidents</div>
+    </nav>
+    <div class="sb-bug">🐛 Report Bug</div>
+  </aside>
+  <main class="main" style="display:flex;flex-direction:column">
+    <div class="page-header"><h1>💬 Ask a Question</h1><div class="caption">Querying unit: <strong>CDU — Crude Distillation Unit</strong></div></div>
+    <div style="flex:1;overflow-y:auto;padding-bottom:16px">
+      <div class="chat-area">
+        <!-- Turn 1 -->
+        <div class="chat-user"><div class="chat-user-bubble">List all pumps in the CDU unit</div></div>
+        <div class="chat-ai"><div class="chat-ai-card" style="width:100%">
+          <p style="margin-bottom:10px">There are <strong>4 centrifugal pumps</strong> in the CDU unit:</p>
+          <table style="margin-bottom:10px">
+            <thead><tr><th>Tag</th><th>Description</th><th>Type</th></tr></thead>
+            <tbody>
+              <tr><td><code class="tag">P-101</code></td><td>Feed pump</td><td><span class="type-badge type-pump">pump</span></td></tr>
+              <tr><td><code class="tag">P-102</code></td><td>Reflux pump</td><td><span class="type-badge type-pump">pump</span></td></tr>
+              <tr><td><code class="tag">P-103</code></td><td>Bottoms pump</td><td><span class="type-badge type-pump">pump</span></td></tr>
+              <tr><td><code class="tag">P-201</code></td><td>Overhead receiver pump</td><td><span class="type-badge type-pump">pump</span></td></tr>
+            </tbody>
+          </table>
+          <div class="sources-toggle">📄 Sources ▸</div>
+        </div></div>
+        <!-- Turn 2 -->
+        <div class="chat-user"><div class="chat-user-bubble">What is downstream of V-101?</div></div>
+        <div class="chat-ai"><div class="chat-ai-card">
+          <p style="margin-bottom:8px">Downstream of <strong>V-101</strong> (Feed Drum):</p>
+          <div style="margin-bottom:8px"><span class="chip">P-101</span><span class="chip">FCV-101</span><span class="chip">E-101</span></div>
+          <div class="sources-toggle">📄 Sources ▸</div>
+        </div></div>
+        <!-- Turn 3 -->
+        <div class="chat-user"><div class="chat-user-bubble">What happens if P-101 fails?</div></div>
+        <div class="chat-ai"><div class="chat-ai-card" style="width:100%">
+          <p style="margin-bottom:10px">If <strong>P-101</strong> is isolated or fails, the following downstream equipment is affected:</p>
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:rgba(245,158,11,.08);border-radius:6px;border:1px solid rgba(245,158,11,.2);margin-bottom:12px">
+            <span style="font-size:16px">🟡</span>
+            <div><div style="font-weight:600;font-size:13px">Medium Impact — 3 equipment affected</div></div>
+          </div>
+          <div class="impact-row" style="margin-bottom:4px"><span class="type-badge type-pump" style="font-size:11px">pump</span><code class="tag" style="font-size:11px">P-201</code></div>
+          <div class="impact-row" style="margin-bottom:4px"><span class="type-badge type-vessel" style="font-size:11px">vessel</span><code class="tag" style="font-size:11px">V-201</code></div>
+          <div class="impact-row" style="margin-bottom:10px"><span class="type-badge type-exchanger" style="font-size:11px">exchanger</span><code class="tag" style="font-size:11px">E-301</code></div>
+          <div class="sources-toggle">📄 Sources ▸ (open)</div>
+          <div class="sources-body">📄 P&ID-CDU-001.pdf — page 3<br>📄 P&ID-CDU-003.pdf — page 7</div>
+        </div></div>
+      </div>
+    </div>
+    <div class="chat-input-bar">
+      <input type="text" placeholder="Ask about CDU equipment, process paths, or SOPs...">
+      <button class="btn btn-primary">Send</button>
+      <a href="#" style="font-size:12px;color:var(--txt2);white-space:nowrap;text-decoration:none">🗑️ Clear</a>
+    </div>
+  </main>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN 7 — DOCUMENTS
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="screen" id="s6">
+  <aside class="sidebar">
+    <div class="sb-logo"><span class="sb-logo-icon">⚙️</span><span class="sb-logo-text">P&ID Intel</span></div>
+    <div class="sb-status">🟢 API Online</div>
+    <div class="sb-divider"></div>
+    <div style="padding:0 8px 8px"><div class="sb-unit-btn">CDU <span style="color:var(--txt2)">▾</span></div></div>
+    <div class="sb-divider"></div>
+    <nav class="sb-nav">
+      <div class="sb-nav-item">📊 Dashboard</div>
+      <div class="sb-nav-item">📤 Upload P&IDs</div>
+      <div class="sb-nav-item">🔍 Search Tags</div>
+      <div class="sb-nav-item">🕸️ Process Graph</div>
+      <div class="sb-nav-item">💬 Ask a Question</div>
+      <div class="sb-nav-item active">📄 Documents</div>
+      <div class="sb-nav-item">🚨 Incidents</div>
+    </nav>
+    <div class="sb-bug">🐛 Report Bug</div>
+  </aside>
+  <main class="main">
+    <div class="page-header"><h1>📄 SOPs & Manuals</h1><div class="caption">Unit: CDU</div></div>
+    <div class="card" style="margin-bottom:16px;border:1px dashed var(--border)">
+      <div style="font-size:13px;font-weight:600;margin-bottom:12px;color:var(--txt2)">📤 Upload a Document ▸</div>
+      <div class="row">
+        <input type="text" placeholder="Drop PDF or DOCX here..." style="flex:1">
+        <select style="width:140px"><option>SOP</option><option>Manual</option><option>Datasheet</option></select>
+        <button class="btn btn-primary">Upload & Index</button>
+      </div>
+    </div>
+    <div class="search-bar" style="margin-bottom:8px"><span style="color:var(--txt2)">🔍</span><input type="text" value="startup procedure" style="background:transparent;border:none;font-size:14px"></div>
+    <div class="section-title">Search Results</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px">
+      <div class="card"><div style="font-size:12px;color:var(--txt2);margin-bottom:4px">📄 <strong style="color:var(--txt)">CDU_Startup_SOP.pdf</strong> · page 12 · CDU</div><p style="font-size:12px;color:var(--txt2)">Open isolation valve V-101 before starting feed pump P-101. Verify pressure readings on PIC-101 show normal operating range...</p></div>
+      <div class="card"><div style="font-size:12px;color:var(--txt2);margin-bottom:4px">📄 <strong style="color:var(--txt)">CDU_Startup_SOP.pdf</strong> · page 14 · CDU</div><p style="font-size:12px;color:var(--txt2)">Start P-101 at minimum speed. Monitor FIC-101 flow rate — target 450 m³/h. Increase gradually over 15 minutes...</p></div>
+      <div class="card"><div style="font-size:12px;color:var(--txt2);margin-bottom:4px">📄 <strong style="color:var(--txt)">CDU_Operations_Manual.pdf</strong> · page 8 · CDU</div><p style="font-size:12px;color:var(--txt2)">Normal operating procedure: preheat train temperature TIC-301 target 280°C. Column T-101 top pressure PIC-101 target 1.2 barg...</p></div>
+    </div>
+    <div class="divider"></div>
+    <div class="section-title">Indexed Documents</div>
+    <div class="card" style="padding:0">
+      <table>
+        <thead><tr><th>Filename</th><th>Type</th><th>Pages</th><th>Chunks</th><th>Indexed</th></tr></thead>
+        <tbody>
+          <tr><td><code class="tag" style="font-size:12px">CDU_Startup_SOP.pdf</code></td><td><span class="badge badge-info">SOP</span></td><td>28</td><td>47</td><td><span class="badge badge-success">✅ Yes</span></td></tr>
+          <tr><td><code class="tag" style="font-size:12px">CDU_Operations_Manual.pdf</code></td><td><span class="badge badge-gray">Manual</span></td><td>156</td><td>312</td><td><span class="badge badge-success">✅ Yes</span></td></tr>
+          <tr><td><code class="tag" style="font-size:12px">CDU_Equipment_Datasheet.pdf</code></td><td><span class="badge badge-gray">Datasheet</span></td><td>12</td><td>—</td><td><span class="badge badge-warning">⏳ Indexing</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SCREEN 8 — INCIDENTS
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="screen" id="s7">
+  <aside class="sidebar">
+    <div class="sb-logo"><span class="sb-logo-icon">⚙️</span><span class="sb-logo-text">P&ID Intel</span></div>
+    <div class="sb-status">🟢 API Online</div>
+    <div class="sb-divider"></div>
+    <div style="padding:0 8px 8px"><div class="sb-unit-btn">CDU <span style="color:var(--txt2)">▾</span></div></div>
+    <div class="sb-divider"></div>
+    <nav class="sb-nav">
+      <div class="sb-nav-item">📊 Dashboard</div>
+      <div class="sb-nav-item">📤 Upload P&IDs</div>
+      <div class="sb-nav-item">🔍 Search Tags</div>
+      <div class="sb-nav-item">🕸️ Process Graph</div>
+      <div class="sb-nav-item">💬 Ask a Question</div>
+      <div class="sb-nav-item">📄 Documents</div>
+      <div class="sb-nav-item active">🚨 Incidents</div>
+    </nav>
+    <div class="sb-bug">🐛 Report Bug</div>
+  </aside>
+  <main class="main">
+    <div class="page-header"><h1>🚨 Incidents</h1><div class="caption">Unit: CDU</div></div>
+    <div class="card" style="margin-bottom:20px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:14px">➕ Report New Incident</div>
+      <div class="form-group"><label class="form-label">Title *</label><input type="text" value="P-101 mechanical seal leak"></div>
+      <div class="form-group"><label class="form-label">Description *</label><textarea rows="2">Feed pump developing visible leak from mechanical seal. Drip rate increasing.</textarea></div>
+      <div class="row" style="gap:12px">
+        <div style="flex:1"><label class="form-label">Severity</label><select><option>high</option><option>medium</option><option>critical</option><option>low</option></select></div>
+        <div style="flex:2"><label class="form-label">Related Tags (comma separated)</label><input type="text" value="P-101, FCV-101"></div>
+      </div>
+      <button class="btn btn-primary" style="margin-top:12px">Report Incident</button>
+    </div>
+    <div class="row" style="margin-bottom:16px">
+      <select style="width:160px"><option>All statuses</option><option>open</option><option>resolved</option></select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--txt2)"><input type="checkbox"> Show all units</label>
+    </div>
+    <div style="font-size:12px;color:var(--txt2);margin-bottom:10px">3 incident(s)</div>
+
+    <div class="incident-card">
+      <div class="incident-header">
+        <div><div class="incident-title">🟠 P-101 mechanical seal leak</div><div class="incident-desc">Feed pump developing visible leak from mechanical seal. Drip rate increasing.</div></div>
+        <button class="btn btn-secondary btn-sm">Resolve</button>
+      </div>
+      <div style="margin-bottom:6px"><span class="chip" style="font-size:11px">P-101</span><span class="chip" style="font-size:11px">FCV-101</span></div>
+      <div class="incident-meta"><span class="badge badge-error" style="font-size:10px">🔓 Open</span> &nbsp;·&nbsp; Severity: <strong>High</strong> &nbsp;·&nbsp; Reported: 2026-06-04</div>
+    </div>
+
+    <div class="incident-card" style="border-color:var(--primary)">
+      <div class="incident-header">
+        <div><div class="incident-title">🟡 TIC-301 temperature reading drift</div><div class="incident-desc">Column top temperature controller showing inconsistent readings vs thermowell.</div></div>
+        <span class="badge badge-warning">🔎 Investigating</span>
+      </div>
+      <div style="margin-bottom:8px"><span class="chip" style="font-size:11px">TIC-301</span><span class="chip" style="font-size:11px">T-101</span></div>
+      <div class="incident-meta">Severity: <strong>Medium</strong> &nbsp;·&nbsp; Reported: 2026-06-03</div>
+      <div class="card" style="margin-top:10px;padding:12px;background:var(--surface2)">
+        <div class="form-label">Resolution notes *</div>
+        <textarea rows="2" style="margin-bottom:8px">Calibration team scheduled for 2026-06-06. Instrument isolated pending check.</textarea>
+        <div class="row" style="gap:8px">
+          <button class="btn btn-primary btn-sm">Confirm Resolve</button>
+          <button class="btn btn-secondary btn-sm">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="incident-card" style="opacity:.75">
+      <div class="incident-header">
+        <div><div class="incident-title">🟢 V-101 level gauge replacement</div><div class="incident-desc">Level gauge glass on feed drum cracked. Replaced with magnetic level gauge.</div></div>
+        <span class="badge badge-success">✅ Resolved</span>
+      </div>
+      <div style="margin-bottom:6px"><span class="chip" style="font-size:11px">V-101</span><span class="chip" style="font-size:11px">LIC-201</span></div>
+      <div class="incident-meta">Severity: <strong>Low</strong> &nbsp;·&nbsp; Reported: 2026-05-28 &nbsp;·&nbsp; ✅ Resolved: 2026-06-01</div>
+    </div>
+  </main>
+</div>
+
+<script>
+  function show(i) {
+    document.querySelectorAll('.screen').forEach((s,j) => s.classList.toggle('visible', i===j));
+    document.querySelectorAll('.screen-btn').forEach((b,j) => b.classList.toggle('active', i===j));
+  }
+</script>
+</body>
+</html>

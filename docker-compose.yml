@@ -1,0 +1,70 @@
+version: "3.9"
+
+# Uses host Ollama (already running on your machine with qwen3:8b + nomic-embed-text)
+# host.docker.internal resolves to the Windows host from inside Docker containers
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-pid_intelligence}
+      POSTGRES_USER:     ${POSTGRES_USER:-pid_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5433:5432"    # 5432 already used on host; connect via localhost:5433
+    healthcheck:
+      test:     ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pid_user}"]
+      interval: 10s
+      timeout:  5s
+      retries:  5
+
+  backend:
+    build:
+      context:    .
+      dockerfile: docker/Dockerfile.backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      APP_ENV:          development
+      OLLAMA_BASE_URL:  http://host.docker.internal:11434
+      PYTHONPATH:       /app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # needed on Linux; harmless on Windows
+    volumes:
+      - ./data:/app/data
+      - ./chroma_db:/app/chroma_db
+      - ./backend:/app/backend               # hot-reload in dev
+    ports:
+      - "8000:8000"
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context:    .
+      dockerfile: docker/Dockerfile.frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    env_file: .env
+    environment:
+      BACKEND_URL: http://backend:8000
+      PYTHONPATH: /app
+    volumes:
+      - ./frontend:/app/frontend             # hot-reload in dev
+    ports:
+      - "8501:8501"
+    command: >
+      streamlit run frontend/app.py
+        --server.address 0.0.0.0
+        --server.port 8501
+        --server.headless true
+
+volumes:
+  postgres_data:

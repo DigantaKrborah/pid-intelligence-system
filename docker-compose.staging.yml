@@ -1,0 +1,32 @@
+version: "3.9"
+
+# Staging overrides — apply with:
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d
+
+services:
+  postgres:
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pid_intelligence_staging}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set for staging}
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    environment:
+      APP_ENV: staging
+      LOG_LEVEL: INFO
+    # No volume mounts for hot-reload in staging
+    volumes:
+      - ./data:/app/data
+      - ./chroma_db:/app/chroma_db
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 2
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    environment:
+      APP_ENV: staging
+    volumes: []
+    command: streamlit run frontend/app.py --server.address 0.0.0.0 --server.port 8501
