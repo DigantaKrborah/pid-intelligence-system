@@ -246,6 +246,7 @@ class LLMService:
         response = model.generate_content(
             [prompt, pil_image],
             generation_config={"max_output_tokens": 8192},
+            request_options={"timeout": 120},   # fail fast if API hangs
         )
         return response.text
 
