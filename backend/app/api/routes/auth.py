@@ -79,11 +79,11 @@ def login(payload: LoginRequest, db=Depends(get_db)):
 
     user_id = str(user["id"])
 
-    # 4. Update last_login timestamp
+    # 4. Update last_login timestamp (column is TIMESTAMP WITHOUT TIME ZONE — strip tz)
     with db.cursor() as cur:
         cur.execute(
             "UPDATE users SET last_login = %s WHERE id = %s",
-            (datetime.now(timezone.utc), user_id),
+            (datetime.now(timezone.utc).replace(tzinfo=None), user_id),
         )
 
     # 5. Record the login in audit_logs for traceability

@@ -5,26 +5,25 @@ These functions are called by the auth routes and by dependencies.py.
 
 from datetime import datetime, timedelta, timezone
 
+import bcrypt as _bcrypt
 from fastapi import HTTPException, status
 from jose import jwt, JWTError
-from passlib.context import CryptContext
 
 from app.core.config import get_settings
 
 # ── Password hashing ──────────────────────────────────────────────────────────
-# bcrypt is a slow, secure hashing algorithm designed for passwords.
-# CryptContext handles the bcrypt work and future algorithm upgrades.
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 def hash_password(plain_password: str) -> str:
     """Return a bcrypt hash of the plain-text password. Store this in the database."""
-    return _pwd_context.hash(plain_password)
+    return _bcrypt.hashpw(plain_password.encode("utf-8"), _bcrypt.gensalt(12)).decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed: str) -> bool:
     """Return True if plain_password matches the stored bcrypt hash, False otherwise."""
-    return _pwd_context.verify(plain_password, hashed)
+    try:
+        return _bcrypt.checkpw(plain_password.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
 
 
 # ── JWT token creation ────────────────────────────────────────────────────────

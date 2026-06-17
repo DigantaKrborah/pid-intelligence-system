@@ -12,7 +12,7 @@ python-multipart==0.0.9
 
 # Authentication (JWT)
 python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
+bcrypt==5.0.0
 
 # Environment variables
 python-dotenv==1.0.1
