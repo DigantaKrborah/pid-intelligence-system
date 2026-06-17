@@ -26,7 +26,7 @@ router = APIRouter()
 
 @router.get("/search")
 def search_tags(
-    q: str = Query(..., min_length=1, description="Search text (partial match on tag number or description)"),
+    q: str = Query("", description="Search text. Leave empty with unit_id to browse all tags for a unit."),
     unit_id: Optional[str] = Query(None, description="Filter by process unit UUID"),
     tag_type: Optional[str] = Query(None, description="Filter category: equipment | instrument | line"),
     db=Depends(get_db),
@@ -34,21 +34,62 @@ def search_tags(
 ):
     """
     Case-insensitive partial search across equipment tags, instrument tags, and line specs.
-    Results from all three tables are merged into a single list.
+    When q is empty and unit_id is provided, returns ALL tags for that unit.
+    Results include upstream/downstream connectivity counts.
     """
+    q = q.strip()
+    browsing_all = not q  # no search term → return everything for the unit
     pattern = f"%{q}%"
+    row_limit = 200 if browsing_all else 100
+
+    # Build WHERE clauses — skip ILIKE filter when browsing all
+    def eq_where():
+        clauses = []
+        params: list = []
+        if not browsing_all:
+            clauses.append("(et.tag_number ILIKE %s OR et.description ILIKE %s)")
+            params += [pattern, pattern]
+        if unit_id:
+            clauses.append("et.unit_id::text = %s")
+            params.append(unit_id)
+        return ("WHERE " + " AND ".join(clauses)) if clauses else "", params
+
+    def inst_where():
+        clauses = []
+        params: list = []
+        if not browsing_all:
+            clauses.append("(it.tag_number ILIKE %s OR it.description ILIKE %s)")
+            params += [pattern, pattern]
+        if unit_id:
+            clauses.append("it.unit_id::text = %s")
+            params.append(unit_id)
+        return ("WHERE " + " AND ".join(clauses)) if clauses else "", params
+
+    def line_where():
+        clauses = []
+        params: list = []
+        if not browsing_all:
+            clauses.append("ls.line_number ILIKE %s")
+            params.append(pattern)
+        if unit_id:
+            clauses.append("ls.unit_id::text = %s")
+            params.append(unit_id)
+        return ("WHERE " + " AND ".join(clauses)) if clauses else "", params
+
     results = []
 
     # -- Equipment tags --
     if tag_type in (None, "equipment"):
+        w, p = eq_where()
         with db.cursor() as cur:
             cur.execute(
-                """
+                f"""
                 SELECT
                     et.tag_number,
-                    'EQUIPMENT'          AS tag_category,
+                    'EQUIPMENT'     AS tag_category,
                     et.tag_type,
                     et.description,
+                    et.service,
                     pu.unit_code,
                     pu.unit_name,
                     d.drawing_number,
@@ -57,25 +98,26 @@ def search_tags(
                 JOIN process_units pu ON pu.id = et.unit_id
                 JOIN pid_drawings  d  ON d.id  = et.drawing_id
                 JOIN drawing_pages dp ON dp.id = et.page_id
-                WHERE (et.tag_number   ILIKE %s OR et.description ILIKE %s)
-                  AND (%s IS NULL OR et.unit_id::text = %s)
+                {w}
                 ORDER BY et.tag_number
-                LIMIT 100
+                LIMIT {row_limit}
                 """,
-                (pattern, pattern, unit_id, unit_id),
+                p,
             )
             results.extend([dict(r) for r in cur.fetchall()])
 
     # -- Instrument tags --
     if tag_type in (None, "instrument"):
+        w, p = inst_where()
         with db.cursor() as cur:
             cur.execute(
-                """
+                f"""
                 SELECT
                     it.tag_number,
-                    'INSTRUMENT'         AS tag_category,
-                    it.instrument_type   AS tag_type,
+                    'INSTRUMENT'        AS tag_category,
+                    it.instrument_type  AS tag_type,
                     it.description,
+                    it.service,
                     pu.unit_code,
                     pu.unit_name,
                     d.drawing_number,
@@ -84,27 +126,28 @@ def search_tags(
                 JOIN process_units pu ON pu.id = it.unit_id
                 JOIN pid_drawings  d  ON d.id  = it.drawing_id
                 JOIN drawing_pages dp ON dp.id = it.page_id
-                WHERE (it.tag_number   ILIKE %s OR it.description ILIKE %s)
-                  AND (%s IS NULL OR it.unit_id::text = %s)
+                {w}
                 ORDER BY it.tag_number
-                LIMIT 100
+                LIMIT {row_limit}
                 """,
-                (pattern, pattern, unit_id, unit_id),
+                p,
             )
             results.extend([dict(r) for r in cur.fetchall()])
 
     # -- Line specs --
     if tag_type in (None, "line"):
+        w, p = line_where()
         with db.cursor() as cur:
             cur.execute(
-                """
+                f"""
                 SELECT
-                    ls.line_number       AS tag_number,
-                    'LINE'               AS tag_category,
-                    'LINE_SPEC'          AS tag_type,
+                    ls.line_number      AS tag_number,
+                    'LINE'              AS tag_category,
+                    'LINE_SPEC'         AS tag_type,
                     CONCAT(ls.nominal_diameter, ' ', ls.fluid_service,
                            ' → ', ls.from_equipment, ' to ', ls.to_equipment)
-                                         AS description,
+                                        AS description,
+                    NULL                AS service,
                     pu.unit_code,
                     pu.unit_name,
                     d.drawing_number,
@@ -113,17 +156,48 @@ def search_tags(
                 JOIN process_units pu ON pu.id = ls.unit_id
                 JOIN pid_drawings  d  ON d.id  = ls.drawing_id
                 JOIN drawing_pages dp ON dp.id = ls.page_id
-                WHERE ls.line_number ILIKE %s
-                  AND (%s IS NULL OR ls.unit_id::text = %s)
+                {w}
                 ORDER BY ls.line_number
-                LIMIT 100
+                LIMIT {row_limit}
                 """,
-                (pattern, unit_id, unit_id),
+                p,
             )
             results.extend([dict(r) for r in cur.fetchall()])
 
     # Sort merged results alphabetically by tag_number
     results.sort(key=lambda r: r.get("tag_number", ""))
+
+    # -- Attach upstream/downstream connectivity for all returned tags --
+    if results:
+        tag_numbers = [r["tag_number"] for r in results]
+        with db.cursor() as cur:
+            cur.execute(
+                """
+                SELECT source_tag, target_tag
+                FROM tag_connectivity
+                WHERE direction = 'DOWNSTREAM'
+                  AND (source_tag = ANY(%s) OR target_tag = ANY(%s))
+                  AND (%s IS NULL OR unit_id::text = %s)
+                """,
+                (tag_numbers, tag_numbers, unit_id, unit_id),
+            )
+            edges = cur.fetchall()
+
+        downstream_map: dict[str, list[str]] = {}
+        upstream_map:   dict[str, list[str]] = {}
+        for edge in edges:
+            src, tgt = edge["source_tag"], edge["target_tag"]
+            downstream_map.setdefault(src, []).append(tgt)
+            upstream_map.setdefault(tgt, []).append(src)
+
+        for r in results:
+            r["upstream_tags"]   = upstream_map.get(r["tag_number"], [])
+            r["downstream_tags"] = downstream_map.get(r["tag_number"], [])
+    else:
+        for r in results:
+            r["upstream_tags"]   = []
+            r["downstream_tags"] = []
+
     return results
 
 
