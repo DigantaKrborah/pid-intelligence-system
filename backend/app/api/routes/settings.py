@@ -77,8 +77,7 @@ def get_llm_settings(
 ):
     """
     Return the currently active LLM configuration for this organisation.
-    Returns { configured: false } shape if no settings have been saved yet.
-    The actual API key is NEVER returned — only the last-4-char hint.
+    Returns { configured: false } if no settings have been saved yet.
     """
     org_id = str(current_user["org_id"])
 
@@ -99,14 +98,12 @@ def get_llm_settings(
         row = cur.fetchone()
 
     if row is None:
-        # No settings saved yet — return a safe "not configured" response
-        # so the frontend can show a setup prompt
         return {
-            "configured": False,
-            "provider":      None,
-            "model_name":    None,
-            "api_key_hint":  None,
-            "updated_at":    None,
+            "configured":   False,
+            "provider":     None,
+            "model_name":   None,
+            "api_key_hint": None,
+            "updated_at":   None,
         }
 
     result = dict(row)
@@ -152,18 +149,18 @@ def save_llm_settings(
     org_id  = str(current_user["org_id"])
     user_id = str(current_user["id"])
 
-    # 3. Determine the key hint to store.
-    #    If the caller provided a new key → use its last 4 chars.
-    #    If no key provided → keep the hint that is already on file.
-    api_key = (payload.api_key or "").strip()
-    if api_key:
-        key_hint = api_key[-4:]
+    # 3. Determine the key to store.
+    #    If a new key is provided → use it.
+    #    If no key provided → keep the existing key on file.
+    new_key = (payload.api_key or "").strip()
+    if new_key:
+        store_key  = new_key
+        store_hint = new_key[-4:]
     else:
-        # Look up the existing active setting for this org
         with db.cursor() as cur:
             cur.execute(
                 """
-                SELECT api_key_hint FROM llm_settings
+                SELECT api_key, api_key_hint FROM llm_settings
                 WHERE org_id = %s AND is_active = true
                 ORDER BY updated_at DESC LIMIT 1
                 """,
@@ -171,31 +168,31 @@ def save_llm_settings(
             )
             existing = cur.fetchone()
 
-        if existing is None:
+        if existing is None or not existing["api_key"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="No API key is on file yet. Please provide an API key.",
             )
-        key_hint = existing["api_key_hint"]
+        store_key  = existing["api_key"]
+        store_hint = existing["api_key_hint"]
 
     # 4. Deactivate all existing settings for this org
-    #    (keeps a history of past settings while making exactly one row active)
     with db.cursor() as cur:
         cur.execute(
             "UPDATE llm_settings SET is_active = false WHERE org_id = %s",
             (org_id,),
         )
 
-    # 5. Insert the new active settings row
+    # 5. Insert the new active settings row (full key stored for extraction use)
     with db.cursor() as cur:
         cur.execute(
             """
             INSERT INTO llm_settings
-                (org_id, provider, model_name, api_key_hint, is_active, updated_by)
-            VALUES (%s, %s, %s, %s, true, %s)
+                (org_id, provider, model_name, api_key, api_key_hint, is_active, updated_by)
+            VALUES (%s, %s, %s, %s, %s, true, %s)
             RETURNING id::text, provider, model_name, api_key_hint, updated_at
             """,
-            (org_id, payload.provider, payload.model_name, key_hint, user_id),
+            (org_id, payload.provider, payload.model_name, store_key, store_hint, user_id),
         )
         saved = cur.fetchone()
 

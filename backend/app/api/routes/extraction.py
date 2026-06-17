@@ -27,10 +27,13 @@ router = APIRouter()
 # ── Shared request body ───────────────────────────────────────────────────────
 
 class ExtractionRequest(BaseModel):
-    """LLM provider details — api_key is NEVER stored in the database."""
-    provider: str     # claude | openai | gemini
-    model_name: str   # e.g. claude-sonnet-4-6, gpt-4o, gemini-1.5-pro
-    api_key: str      # entered by the user in the Settings page
+    """
+    All fields are optional — when omitted the active llm_settings row is used.
+    Pass them explicitly only to override the saved settings for a single run.
+    """
+    provider:   Optional[str] = None
+    model_name: Optional[str] = None
+    api_key:    Optional[str] = None
 
 
 class StartExtractionRequest(ExtractionRequest):
@@ -39,6 +42,48 @@ class StartExtractionRequest(ExtractionRequest):
 
 class PageExtractionRequest(ExtractionRequest):
     page_id: str
+
+
+def _resolve_llm_creds(
+    db_conn,
+    org_id: str,
+    provider: Optional[str],
+    model_name: Optional[str],
+    api_key: Optional[str],
+) -> tuple[str, str, str]:
+    """
+    Return (provider, model_name, api_key) — using saved llm_settings when any
+    field is not supplied in the request.  Raises HTTP 400 if nothing is on file.
+    """
+    if provider and model_name and api_key:
+        return provider, model_name, api_key  # fully supplied — use as-is
+
+    with db_conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT provider, model_name, api_key
+            FROM llm_settings
+            WHERE org_id = %s AND is_active = true
+            ORDER BY updated_at DESC LIMIT 1
+            """,
+            (org_id,),
+        )
+        row = cur.fetchone()
+
+    if row is None or not row["api_key"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "No LLM settings found. "
+                "Go to Settings → LLM Configuration and save your provider + API key first."
+            ),
+        )
+
+    return (
+        provider   or row["provider"],
+        model_name or row["model_name"],
+        api_key    or row["api_key"],
+    )
 
 
 # ── Core extraction logic (shared by routes and background task) ───────────────
@@ -371,8 +416,13 @@ def start_extraction(
     """
     Queue extraction for ALL pages of a drawing.
     Returns immediately — extraction runs in the background.
-    Poll GET /api/extraction/status/{drawing_id} to track progress.
+    LLM credentials are read from saved Settings when not supplied in the request.
     """
+    org_id = str(current_user["org_id"])
+    provider, model_name, api_key = _resolve_llm_creds(
+        db, org_id, payload.provider, payload.model_name, payload.api_key
+    )
+
     # Get pages that need extraction (pending or previously failed)
     with db.cursor() as cur:
         cur.execute(
@@ -402,22 +452,22 @@ def start_extraction(
             (payload.drawing_id,),
         )
 
-    # Queue the background task — runs after this response is sent
     background_tasks.add_task(
         _run_drawing_extraction_bg,
         drawing_id=payload.drawing_id,
         page_ids=page_ids,
-        provider=payload.provider,
-        model_name=payload.model_name,
-        api_key=payload.api_key,
+        provider=provider,
+        model_name=model_name,
+        api_key=api_key,
         user_id=str(current_user["id"]),
     )
 
     return {
-        "message": "Extraction started",
-        "drawing_id": payload.drawing_id,
+        "message":     "Extraction started",
+        "drawing_id":  payload.drawing_id,
         "total_pages": len(page_ids),
-        "note": "Poll GET /api/extraction/status/{drawing_id} to track progress.",
+        "provider":    provider,
+        "model_name":  model_name,
     }
 
 
@@ -427,20 +477,25 @@ def start_extraction(
 def extract_single_page(
     payload: PageExtractionRequest,
     db=Depends(get_db),
-    _: dict = Depends(require_operator_or_admin),
+    current_user: dict = Depends(require_operator_or_admin),
 ):
     """
     Extract tags from a single drawing page synchronously.
     Note: This request may take 15–60 seconds while waiting for the LLM.
-    The frontend should show a loading indicator and set a generous timeout.
+    LLM credentials are read from saved Settings when not supplied in the request.
     """
+    org_id = str(current_user["org_id"])
+    provider, model_name, api_key = _resolve_llm_creds(
+        db, org_id, payload.provider, payload.model_name, payload.api_key
+    )
+
     try:
         result = _extract_page_with_conn(
             db_conn=db,
             page_id=payload.page_id,
-            provider=payload.provider,
-            model_name=payload.model_name,
-            api_key=payload.api_key,
+            provider=provider,
+            model_name=model_name,
+            api_key=api_key,
         )
     except FileNotFoundError as err:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err))
@@ -538,12 +593,17 @@ def retry_page_extraction(
     page_id: str,
     payload: ExtractionRequest,
     db=Depends(get_db),
-    _: dict = Depends(require_operator_or_admin),
+    current_user: dict = Depends(require_operator_or_admin),
 ):
     """
     Retry extraction for a single page that previously failed.
-    Deletes old data for this page and re-runs the LLM extraction.
+    LLM credentials are read from saved Settings when not supplied in the request.
     """
+    org_id = str(current_user["org_id"])
+    provider, model_name, api_key = _resolve_llm_creds(
+        db, org_id, payload.provider, payload.model_name, payload.api_key
+    )
+
     # Confirm the page exists and check its current status
     with db.cursor() as cur:
         cur.execute(
@@ -570,9 +630,9 @@ def retry_page_extraction(
         result = _extract_page_with_conn(
             db_conn=db,
             page_id=page_id,
-            provider=payload.provider,
-            model_name=payload.model_name,
-            api_key=payload.api_key,
+            provider=provider,
+            model_name=model_name,
+            api_key=api_key,
         )
     except Exception as err:
         with db.cursor() as cur:

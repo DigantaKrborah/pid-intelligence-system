@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   X, Zap, Loader2, CheckCircle2, XCircle, Clock, AlertCircle,
-  ChevronDown, Eye, EyeOff, Info,
+  ChevronDown, Eye, EyeOff, Settings, ChevronRight,
 } from 'lucide-react'
 import client from '../api/client'
 
@@ -14,7 +14,6 @@ function PageStatusIcon({ status }) {
   return <Clock size={14} className="text-gray-300 flex-shrink-0" />
 }
 
-// ── Page status label text ────────────────────────────────────────────────────
 const PAGE_STATUS_LABEL = {
   pending:    'Pending',
   processing: 'Processing…',
@@ -22,64 +21,60 @@ const PAGE_STATUS_LABEL = {
   failed:     'Failed',
 }
 
+const PROVIDER_LABEL = { claude: 'Claude (Anthropic)', openai: 'OpenAI', gemini: 'Google Gemini' }
+
 // ── Extraction modal ──────────────────────────────────────────────────────────
-// Props:
-//   drawing  — the drawing row from the list endpoint
-//              { id, drawing_number, drawing_title, total_pages, upload_status }
-//   onClose  — called when user closes the modal (extraction may still be running)
-//   onDone   — called when extraction finishes (all pages completed or failed)
-
 export default function ExtractionModal({ drawing, onClose, onDone }) {
-  const [provider, setProvider]   = useState('claude')
-  const [modelName, setModelName] = useState('')
-  const [apiKey, setApiKey]       = useState('')
-  const [showKey, setShowKey]     = useState(false)   // toggle password visibility
-  const [isRunning, setIsRunning] = useState(false)
-  const [startError, setStartError] = useState('')
+  const [isRunning,   setIsRunning]   = useState(false)
+  const [startError,  setStartError]  = useState('')
+  const [pages,       setPages]       = useState([])
+  const [tagCounts,   setTagCounts]   = useState({ equipment: 0, instruments: 0, lines: 0 })
+  const [showOverride, setShowOverride] = useState(false)  // expand manual override section
 
-  // Per-page status comes from polling the extraction status endpoint
-  const [pages, setPages]         = useState([])
-  const [tagCounts, setTagCounts] = useState({ equipment: 0, instruments: 0, lines: 0 })
+  // Override fields (only used when user explicitly overrides saved settings)
+  const [overrideProvider,   setOverrideProvider]   = useState('gemini')
+  const [overrideModelName,  setOverrideModelName]  = useState('')
+  const [overrideApiKey,     setOverrideApiKey]     = useState('')
+  const [showKey,            setShowKey]            = useState(false)
 
   const intervalRef = useRef(null)
 
-  // Close on Escape (only if not running)
+  // ── Load saved LLM settings ───────────────────────────────────────────────
+  const { data: savedSettings, isLoading: loadingSettings } = useQuery({
+    queryKey: ['llm-settings'],
+    queryFn:  () => client.get('/api/settings/llm').then(r => r.data),
+  })
+
+  // ── Model catalogue (for override dropdowns) ──────────────────────────────
+  const { data: modelCatalogue = {} } = useQuery({
+    queryKey: ['llm-models'],
+    queryFn:  () => client.get('/api/settings/llm/models').then(r => r.data),
+  })
+
+  const overrideModels = modelCatalogue[overrideProvider] || []
+
+  // Auto-select first model when override provider changes
+  useEffect(() => {
+    if (overrideModels.length > 0) setOverrideModelName(overrideModels[0].id)
+    else                           setOverrideModelName('')
+  }, [overrideProvider, overrideModels.length])
+
+  // ── Close on Escape ───────────────────────────────────────────────────────
   useEffect(() => {
     function handler(e) { if (e.key === 'Escape' && !isRunning) onClose() }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [isRunning, onClose])
 
-  // ── Model catalogue ────────────────────────────────────────────────────────
-  const { data: modelCatalogue = {} } = useQuery({
-    queryKey: ['llm-models'],
-    queryFn:  () => client.get('/api/settings/llm/models').then(r => r.data),
-  })
-
-  const availableModels = modelCatalogue[provider] || []
-
-  // Auto-select first model when provider changes
-  useEffect(() => {
-    if (availableModels.length > 0) setModelName(availableModels[0].id)
-    else                            setModelName('')
-  }, [provider, availableModels.length])
-
-  // ── Initial page status load ───────────────────────────────────────────────
-  // On open, fetch current extraction status so we show real per-page state
-  // (may already be partially extracted from a previous session)
+  // ── Initial page status load ──────────────────────────────────────────────
   useEffect(() => {
     client.get(`/api/extraction/status/${drawing.id}`)
       .then(({ data }) => {
         setPages(data.pages)
         setTagCounts(data.tags_extracted)
-        // If extraction is already running (from another session), start polling
-        if (data.drawing.upload_status === 'processing') {
-          setIsRunning(true)
-        }
+        if (data.drawing.upload_status === 'processing') setIsRunning(true)
       })
       .catch(() => {
-        // If status fails (e.g. no pages yet), initialise with empty page stubs
-        // based on total_pages from the drawing list row
         setPages(
           Array.from({ length: drawing.total_pages || 1 }, (_, i) => ({
             id:               `stub-${i}`,
@@ -90,14 +85,9 @@ export default function ExtractionModal({ drawing, onClose, onDone }) {
       })
   }, [drawing.id, drawing.total_pages])
 
-  // ── Polling ────────────────────────────────────────────────────────────────
-  // While isRunning: poll /api/extraction/status every 2 seconds and
-  // update per-page status + tag counts in state.
+  // ── Polling while running ─────────────────────────────────────────────────
   useEffect(() => {
-    if (!isRunning) {
-      clearInterval(intervalRef.current)
-      return
-    }
+    if (!isRunning) { clearInterval(intervalRef.current); return }
 
     intervalRef.current = setInterval(async () => {
       try {
@@ -105,7 +95,6 @@ export default function ExtractionModal({ drawing, onClose, onDone }) {
         setPages(data.pages)
         setTagCounts(data.tags_extracted)
 
-        // Stop when every page is in a terminal state (not pending/processing)
         const allTerminal = data.pages.length > 0 && data.pages.every(p =>
           p.extraction_status === 'completed' || p.extraction_status === 'failed'
         )
@@ -114,44 +103,60 @@ export default function ExtractionModal({ drawing, onClose, onDone }) {
           setIsRunning(false)
           if (onDone) onDone()
         }
-      } catch {
-        // Ignore poll errors — keep trying
-      }
+      } catch { /* keep polling */ }
     }, 2000)
 
-    // Cleanup: clear the interval if this effect re-runs or the modal unmounts
     return () => clearInterval(intervalRef.current)
   }, [isRunning, drawing.id, onDone])
 
-  // ── Start extraction ───────────────────────────────────────────────────────
+  // ── Start extraction ──────────────────────────────────────────────────────
   async function handleStart() {
-    if (!apiKey.trim()) { setStartError('Please enter your API key.'); return }
-    if (!modelName)     { setStartError('Please select a model.'); return }
+    const hasSaved  = savedSettings?.configured
+    const useManual = showOverride && overrideApiKey.trim()
+
+    // If no saved settings and no manual override → show error
+    if (!hasSaved && !useManual) {
+      setStartError('No LLM settings configured. Go to Settings → LLM Configuration first, or enter credentials below.')
+      return
+    }
+
+    // If override panel is open but key is missing → warn
+    if (showOverride && !overrideApiKey.trim()) {
+      setStartError('Enter an API key or collapse the override section to use saved settings.')
+      return
+    }
 
     setStartError('')
     setIsRunning(true)
 
+    const body = { drawing_id: drawing.id }
+    if (useManual) {
+      body.provider   = overrideProvider
+      body.model_name = overrideModelName
+      body.api_key    = overrideApiKey
+    }
+    // If not overriding → send no creds; backend reads from llm_settings
+
     try {
-      await client.post('/api/extraction/start', {
-        drawing_id: drawing.id,
-        provider,
-        model_name: modelName,
-        api_key:    apiKey,
-      })
-      // Immediately fetch status so the page list shows 'processing' for the first page
+      await client.post('/api/extraction/start', body)
       const { data } = await client.get(`/api/extraction/status/${drawing.id}`)
       setPages(data.pages)
       setTagCounts(data.tags_extracted)
     } catch (err) {
       const msg = err.response?.data?.detail
-      setStartError(typeof msg === 'string' ? msg : 'Failed to start extraction. Check your API key.')
+      setStartError(typeof msg === 'string' ? msg : 'Failed to start extraction.')
       setIsRunning(false)
     }
   }
 
-  // ── Derived counters ───────────────────────────────────────────────────────
   const doneCount   = pages.filter(p => p.extraction_status === 'completed').length
   const failedCount = pages.filter(p => p.extraction_status === 'failed').length
+  const hasSaved    = savedSettings?.configured
+
+  // Button enabled when:
+  //  - not running AND
+  //  - either saved settings exist, or override panel has a key
+  const canStart = !isRunning && (hasSaved || (showOverride && overrideApiKey.trim()))
 
   return (
     <div
@@ -182,9 +187,9 @@ export default function ExtractionModal({ drawing, onClose, onDone }) {
         </div>
 
         {/* ── Scrollable body ──────────────────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
 
-          {/* Start error */}
+          {/* Error banner */}
           {startError && (
             <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
               <AlertCircle size={15} className="text-red-500 mt-0.5 flex-shrink-0" />
@@ -192,82 +197,137 @@ export default function ExtractionModal({ drawing, onClose, onDone }) {
             </div>
           )}
 
-          {/* ── LLM provider ───────────────────────────────────────────── */}
-          <div className="grid grid-cols-2 gap-3">
-            {/* Provider */}
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1.5 uppercase tracking-wide">
-                Provider
-              </label>
-              <div className="relative">
-                <select
-                  value={provider}
-                  onChange={e => setProvider(e.target.value)}
-                  disabled={isRunning}
-                  className="w-full pl-3 pr-8 py-2.5 text-sm border border-gray-300 rounded-lg appearance-none
-                             focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-                >
-                  <option value="claude">Claude (Anthropic)</option>
-                  <option value="openai">OpenAI</option>
-                  <option value="gemini">Google Gemini</option>
-                </select>
-                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          {/* ── LLM config section ─────────────────────────────────────── */}
+          {loadingSettings ? (
+            <div className="flex items-center gap-2 text-gray-400 text-sm py-2">
+              <Loader2 size={14} className="animate-spin" /> Loading settings…
+            </div>
+          ) : hasSaved ? (
+            /* ── Saved settings banner ────────────────────────────────── */
+            <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 space-y-1">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 size={14} className="text-green-600 flex-shrink-0" />
+                <p className="text-green-800 text-sm font-medium">Using saved LLM settings</p>
               </div>
-            </div>
-
-            {/* Model */}
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1.5 uppercase tracking-wide">
-                Model
-              </label>
-              <div className="relative">
-                <select
-                  value={modelName}
-                  onChange={e => setModelName(e.target.value)}
-                  disabled={isRunning || availableModels.length === 0}
-                  className="w-full pl-3 pr-8 py-2.5 text-sm border border-gray-300 rounded-lg appearance-none
-                             focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-                >
-                  {availableModels.map(m => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-              </div>
-            </div>
-          </div>
-
-          {/* API key */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1.5 uppercase tracking-wide">
-              API Key <span className="text-red-400">*</span>
-            </label>
-            <div className="relative">
-              <input
-                type={showKey ? 'text' : 'password'}
-                value={apiKey}
-                onChange={e => setApiKey(e.target.value)}
-                disabled={isRunning}
-                placeholder="Paste your API key here"
-                className="w-full px-3 pr-10 py-2.5 text-sm border border-gray-300 rounded-lg font-mono
-                           focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey(v => !v)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
-              </button>
-            </div>
-
-            {/* Security note */}
-            <div className="flex items-start gap-1.5 mt-1.5">
-              <Info size={12} className="text-blue-400 mt-0.5 flex-shrink-0" />
-              <p className="text-gray-400 text-xs">
-                API key is used only for this extraction and is <strong>never stored</strong> in the database.
+              <p className="text-green-700 text-xs pl-5">
+                {PROVIDER_LABEL[savedSettings.provider] ?? savedSettings.provider}
+                {' · '}
+                {savedSettings.model_name}
+                {savedSettings.api_key_hint && (
+                  <span className="text-green-600"> (key ending …{savedSettings.api_key_hint})</span>
+                )}
               </p>
             </div>
+          ) : (
+            /* ── No settings — must enter manually ───────────────────── */
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle size={14} className="text-amber-600 flex-shrink-0" />
+                <p className="text-amber-800 text-sm font-medium">No LLM settings saved</p>
+              </div>
+              <p className="text-amber-700 text-xs mt-1 pl-5">
+                Go to <strong>Settings → LLM Configuration</strong> to save your API key,
+                or enter credentials below for this extraction only.
+              </p>
+            </div>
+          )}
+
+          {/* ── Override / manual entry (collapsible) ─────────────────── */}
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowOverride(v => !v)}
+              disabled={isRunning}
+              className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-gray-600
+                         hover:bg-gray-50 transition-colors disabled:opacity-50"
+            >
+              <div className="flex items-center gap-2">
+                <Settings size={14} className="text-gray-400" />
+                <span>{hasSaved ? 'Override LLM settings for this run' : 'Enter credentials manually'}</span>
+              </div>
+              <ChevronRight
+                size={14}
+                className={`text-gray-400 transition-transform ${showOverride ? 'rotate-90' : ''}`}
+              />
+            </button>
+
+            {showOverride && (
+              <div className="border-t border-gray-200 px-4 py-4 space-y-3 bg-gray-50/50">
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Provider */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1.5 uppercase tracking-wide">
+                      Provider
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={overrideProvider}
+                        onChange={e => setOverrideProvider(e.target.value)}
+                        disabled={isRunning}
+                        className="w-full pl-3 pr-8 py-2 text-sm border border-gray-300 rounded-lg appearance-none
+                                   focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 bg-white"
+                      >
+                        <option value="claude">Claude</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="gemini">Gemini</option>
+                      </select>
+                      <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    </div>
+                  </div>
+
+                  {/* Model */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1.5 uppercase tracking-wide">
+                      Model
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={overrideModelName}
+                        onChange={e => setOverrideModelName(e.target.value)}
+                        disabled={isRunning || overrideModels.length === 0}
+                        className="w-full pl-3 pr-8 py-2 text-sm border border-gray-300 rounded-lg appearance-none
+                                   focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 bg-white"
+                      >
+                        {overrideModels.map(m => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* API key */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5 uppercase tracking-wide">
+                    API Key {!hasSaved && <span className="text-red-400">*</span>}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showKey ? 'text' : 'password'}
+                      value={overrideApiKey}
+                      onChange={e => setOverrideApiKey(e.target.value)}
+                      disabled={isRunning}
+                      placeholder={hasSaved ? 'Leave blank to use saved key' : 'Paste your API key'}
+                      className="w-full px-3 pr-10 py-2 text-sm border border-gray-300 rounded-lg font-mono
+                                 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowKey(v => !v)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                  {hasSaved && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      Leave blank to use the API key from Settings.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ── Per-page progress ───────────────────────────────────────── */}
@@ -283,9 +343,9 @@ export default function ExtractionModal({ drawing, onClose, onDone }) {
                     key={page.id}
                     className={`flex items-center gap-3 px-3 py-2 text-sm
                       ${idx < pages.length - 1 ? 'border-b border-gray-100' : ''}
-                      ${page.extraction_status === 'completed' ? 'bg-green-50/50'   : ''}
-                      ${page.extraction_status === 'failed'    ? 'bg-red-50/50'     : ''}
-                      ${page.extraction_status === 'processing'? 'bg-blue-50/50'    : ''}
+                      ${page.extraction_status === 'completed'  ? 'bg-green-50/50'  : ''}
+                      ${page.extraction_status === 'failed'     ? 'bg-red-50/50'    : ''}
+                      ${page.extraction_status === 'processing' ? 'bg-blue-50/50'   : ''}
                     `}
                   >
                     <PageStatusIcon status={page.extraction_status} />
@@ -310,7 +370,7 @@ export default function ExtractionModal({ drawing, onClose, onDone }) {
           {(tagCounts.equipment > 0 || tagCounts.instruments > 0 || tagCounts.lines > 0) && (
             <div className="grid grid-cols-3 gap-3">
               {[
-                { label: 'Equipment',   count: tagCounts.equipment,   cls: 'text-blue-700 bg-blue-50'   },
+                { label: 'Equipment',   count: tagCounts.equipment,   cls: 'text-blue-700 bg-blue-50'     },
                 { label: 'Instruments', count: tagCounts.instruments, cls: 'text-purple-700 bg-purple-50' },
                 { label: 'Lines',       count: tagCounts.lines,       cls: 'text-emerald-700 bg-emerald-50' },
               ].map(({ label, count, cls }) => (
@@ -335,7 +395,7 @@ export default function ExtractionModal({ drawing, onClose, onDone }) {
           </button>
           <button
             onClick={handleStart}
-            disabled={isRunning || !apiKey.trim() || !modelName}
+            disabled={!canStart}
             className="flex items-center gap-2 px-5 py-2 bg-yellow-500 hover:bg-yellow-600
                        disabled:bg-gray-200 disabled:text-gray-400
                        text-white text-sm font-medium rounded-lg transition-colors"
