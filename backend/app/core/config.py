@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     # --- AI provider ---
     default_llm_provider: str = "claude"   # claude | openai | gemini
 
+    # --- LLM API keys (env-var fallback for when DB settings aren't configured yet) ---
+    gemini_api_key:    Optional[str] = None   # GEMINI_API_KEY in .env
+    openai_api_key:    Optional[str] = None   # OPENAI_API_KEY in .env
+    anthropic_api_key: Optional[str] = None   # ANTHROPIC_API_KEY in .env
+
     # --- PDF processing ---
     # Leave unset (None) when running in Docker — Poppler is on the system PATH.
     # Set to the Poppler bin directory only for local Windows installs.

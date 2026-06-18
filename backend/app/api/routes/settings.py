@@ -4,9 +4,9 @@ GET  /api/settings/llm/models  → static list of available models per provider
 GET  /api/settings/llm         → current active LLM config (api_key_hint only)
 POST /api/settings/llm         → save LLM config — admin only
 
-SECURITY RULE: The full API key is NEVER stored in the database.
-Only the last 4 characters are saved as api_key_hint for display purposes.
-The frontend must pass the api_key at extraction time; the backend never persists it.
+The full API key IS stored in the api_key column so that extraction.py background tasks
+can retrieve it.  Only api_key_hint (last 4 chars) is returned to the frontend; the full
+key is never sent over the API.
 
 Route order: /llm/models must come before /llm so FastAPI does not treat
 "models" as a path segment of a different route.
@@ -35,8 +35,10 @@ _AVAILABLE_MODELS = {
         {"id": "gpt-4o-mini", "name": "GPT-4o Mini (Faster, lower cost)"},
     ],
     "gemini": [
-        {"id": "gemini-1.5-pro",   "name": "Gemini 1.5 Pro (Large context)"},
-        {"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash (Fast)"},
+        {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash (Fast, recommended)"},
+        {"id": "gemini-2.5-pro",   "name": "Gemini 2.5 Pro (Best accuracy)"},
+        {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash (Stable)"},
+        {"id": "gemini-2.0-flash-lite", "name": "Gemini 2.0 Flash Lite (Fastest)"},
     ],
 }
 

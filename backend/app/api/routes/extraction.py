@@ -44,6 +44,13 @@ class PageExtractionRequest(ExtractionRequest):
     page_id: str
 
 
+_ENV_KEY_BY_PROVIDER = {
+    "gemini":    lambda s: s.gemini_api_key,
+    "openai":    lambda s: s.openai_api_key,
+    "claude":    lambda s: s.anthropic_api_key,
+}
+
+
 def _resolve_llm_creds(
     db_conn,
     org_id: str,
@@ -52,11 +59,17 @@ def _resolve_llm_creds(
     api_key: Optional[str],
 ) -> tuple[str, str, str]:
     """
-    Return (provider, model_name, api_key) — using saved llm_settings when any
-    field is not supplied in the request.  Raises HTTP 400 if nothing is on file.
+    Return (provider, model_name, api_key).
+
+    Priority:
+      1. Values fully supplied in the request — use as-is.
+      2. Active llm_settings row in DB (api_key stored there by settings.py).
+      3. Env-var fallback: GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY.
+
+    Raises HTTP 400 if no key can be resolved.
     """
     if provider and model_name and api_key:
-        return provider, model_name, api_key  # fully supplied — use as-is
+        return provider, model_name, api_key
 
     with db_conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
@@ -70,7 +83,18 @@ def _resolve_llm_creds(
         )
         row = cur.fetchone()
 
-    if row is None or not row["api_key"]:
+    resolved_provider   = provider   or (row["provider"]   if row else None)
+    resolved_model      = model_name or (row["model_name"] if row else None)
+    resolved_key        = api_key    or (row["api_key"]    if row else None)
+
+    # Env-var fallback when DB has no key (or hasn't been configured yet)
+    if not resolved_key and resolved_provider:
+        settings = get_settings()
+        env_getter = _ENV_KEY_BY_PROVIDER.get(resolved_provider)
+        if env_getter:
+            resolved_key = env_getter(settings) or None
+
+    if not resolved_provider or not resolved_model or not resolved_key:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -79,11 +103,7 @@ def _resolve_llm_creds(
             ),
         )
 
-    return (
-        provider   or row["provider"],
-        model_name or row["model_name"],
-        api_key    or row["api_key"],
-    )
+    return resolved_provider, resolved_model, resolved_key
 
 
 # ── Core extraction logic (shared by routes and background task) ───────────────
