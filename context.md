@@ -27,7 +27,7 @@ ChromaDB via a separate documents flow).
 | DB access | psycopg2 with `RealDictCursor` — no ORM | — |
 | Auth | JWT (python-jose) + bcrypt — token stored in `localStorage` as `pid_token` | — |
 | AI / LLM | Configurable: Claude (anthropic), OpenAI (openai), Gemini (google-generativeai) | — |
-| PDF splitting | pdf2image + Poppler (at `C:/poppler/Library/bin`) | — |
+| PDF splitting | pdf2image + Poppler — system PATH in Docker (`/usr/bin/pdftoppm`), Windows path in `backend/.env` for local dev | — |
 | Doc indexing | ChromaDB (local) via `llm_service.analyze_image` | — |
 | Config | pydantic-settings — reads env vars injected by docker-compose (`env_file: .env`) | — |
 
@@ -209,7 +209,7 @@ UPLOAD_BASE_PATH=/app/uploads
 JWT_SECRET=[32-char random hex]
 JWT_EXPIRE_HOURS=8
 DEFAULT_LLM_PROVIDER=claude
-POPPLER_PATH=C:/poppler/Library/bin
+POPPLER_PATH=              # empty → use system PATH (/usr/bin/pdftoppm in Docker)
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
 The `DATABASE_URL` host is `postgres` (Docker service name) — works inside Docker network.
@@ -287,6 +287,9 @@ users, extraction status. Requires `uvicorn main:app` running on port 8000.
 | Docker backend: `psycopg2.ProgrammingError: invalid dsn` (asyncpg URL passed to psycopg2) | `database.py` → `_psycopg2_dsn()` strips `+asyncpg` driver prefix |
 | Docker frontend: Streamlit `app.py` entrypoint no longer exists (frontend is React/Vite) | `Dockerfile.frontend` → rewritten to Node 20; `docker-compose.yml` → port 5173, `npm run dev` |
 | File uploads broke when `Content-Type: application/json` was set globally on axios | `client.js` → removed hardcoded `Content-Type` header; axios sets it per-request |
+| `POST /api/settings/llm` returned 500: `column "api_key" does not exist` | `db/schema.sql` → added `api_key TEXT` column to `llm_settings`; rebuilt `docker/init.sql`; re-init postgres volume |
+| `extraction.py` background task: `psycopg2.ProgrammingError: invalid dsn` | `extraction.py` → imported and applied `_psycopg2_dsn()` before passing URL to `psycopg2.connect()` |
+| Poppler path `C:/poppler-25.12.0/Library/bin` (from `backend/.env`) used inside Linux Docker container | Root `.env` → `POPPLER_PATH=` (empty) overrides via docker-compose env var injection; `file_service.py` → `poppler_path or None` so empty string falls back to system PATH |
 
 ---
 

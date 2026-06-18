@@ -124,6 +124,16 @@
   'http://localhost:8000'` so Docker container routes to the `backend` service correctly
 - `frontend/src/api/client.js` — removed hardcoded `Content-Type: application/json` header
   (broke multipart/form-data file uploads; axios sets the correct header automatically)
+- `db/schema.sql` + `docker/init.sql` — added `api_key TEXT` column to `llm_settings` table;
+  `extraction.py` reads the full key from DB for the "use saved settings" flow
+- `db/seed.sql` — fixed bcrypt hash for `Admin@123` (old hash didn't verify correctly)
+- `backend/app/api/routes/extraction.py` — background task now applies `_psycopg2_dsn()`
+  before `psycopg2.connect()` (same asyncpg prefix bug as `database.py`)
+- `backend/app/core/config.py` — `poppler_path: Optional[str] = None`; no longer hardcoded
+- `.env` (root) — `POPPLER_PATH=` (empty) so docker-compose injects it as env var, which
+  pydantic-settings picks up with higher priority than the `backend/.env` file value
+  (`C:/poppler-25.12.0/Library/bin`); `file_service.py` converts empty string → `None` so
+  pdf2image uses system PATH where `pdftoppm` lives (`/usr/bin/pdftoppm` in the container)
 
 ---
 
