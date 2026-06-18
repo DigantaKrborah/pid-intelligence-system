@@ -29,7 +29,7 @@ VALUES (
   'admin',
   'System Administrator',
   'admin@nrl.co.in',
-  '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBP9Pq2WYZJ3VC',
+  '$2b$12$346MoFWG/jUb2VRe7j8Bpu7fg3pEeNAMpv3XzrmBoGmYzTrAG.piW',
   'admin'
 )
 ON CONFLICT (username) DO NOTHING;

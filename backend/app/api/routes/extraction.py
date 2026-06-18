@@ -17,7 +17,7 @@ from psycopg2.extras import Json, RealDictCursor
 from pydantic import BaseModel
 
 from app.core.config import get_settings
-from app.core.database import get_db
+from app.core.database import get_db, _psycopg2_dsn
 from app.core.dependencies import get_current_user, require_operator_or_admin
 from app.services.llm_service import LLMService
 
@@ -366,7 +366,7 @@ def _run_drawing_extraction_bg(
     logger.info(f"[BG] Starting extraction for drawing {drawing_id} — {len(page_ids)} page(s)")
 
     # Create a direct connection (not from the pool) for the background task
-    db_conn = psycopg2.connect(settings.database_url)
+    db_conn = psycopg2.connect(_psycopg2_dsn(settings.database_url))
     db_conn.autocommit = False
 
     try:

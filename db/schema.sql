@@ -238,7 +238,8 @@ CREATE TABLE llm_settings (
   provider      VARCHAR(30) NOT NULL
                 CHECK (provider IN ('claude','openai','gemini')),
   model_name    VARCHAR(100) NOT NULL,  -- e.g. claude-opus-4-6, gpt-4o, gemini-1.5-pro
-  api_key_hint  VARCHAR(20),            -- last 4 chars only, for display (NEVER store full key)
+  api_key       TEXT,                   -- full key stored for extraction use
+  api_key_hint  VARCHAR(20),            -- last 4 chars only, for display
   is_active     BOOLEAN DEFAULT true,
   updated_by    UUID REFERENCES users(id),
   updated_at    TIMESTAMP DEFAULT now()

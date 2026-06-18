@@ -6,6 +6,7 @@ All files stay on local disk — nothing is sent to the cloud.
 
 import shutil
 from pathlib import Path
+from typing import Optional
 
 # Only these file types are accepted for P&ID drawings
 ALLOWED_FILE_TYPES = {"pdf", "jpg", "jpeg", "png", "tiff"}
@@ -51,7 +52,7 @@ def save_upload_file(content: bytes, destination_path: Path) -> Path:
 def convert_pdf_to_images(
     pdf_path: Path,
     output_folder: Path,
-    poppler_path: str,
+    poppler_path: Optional[str] = None,
 ) -> list[Path]:
     """
     Convert every page of a PDF to a PNG image using pdf2image (which requires Poppler).
@@ -71,7 +72,7 @@ def convert_pdf_to_images(
         # dpi=150 gives a good balance of quality vs. file size for P&ID sheets
         images = convert_from_path(
             str(pdf_path),
-            poppler_path=poppler_path,
+            poppler_path=poppler_path or None,
             dpi=150,
             fmt="png",
         )

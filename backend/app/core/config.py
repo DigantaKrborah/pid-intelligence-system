@@ -6,6 +6,7 @@ Uses pydantic-settings so missing required values cause a clear error at startup
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,7 +41,9 @@ class Settings(BaseSettings):
     default_llm_provider: str = "claude"   # claude | openai | gemini
 
     # --- PDF processing ---
-    poppler_path: str = "C:/poppler/Library/bin"
+    # Leave unset (None) when running in Docker — Poppler is on the system PATH.
+    # Set to the Poppler bin directory only for local Windows installs.
+    poppler_path: Optional[str] = None
 
 
 @lru_cache          # call get_settings() anywhere — it only creates the object once
