@@ -245,8 +245,11 @@ class LLMService:
         pil_image = PILImage.open(str(image_path))
         response = model.generate_content(
             [prompt, pil_image],
-            generation_config={"max_output_tokens": 8192},
-            request_options={"timeout": 120},   # fail fast if API hangs
+            generation_config={
+                "max_output_tokens": 8192,
+                "response_mime_type": "application/json",  # return raw JSON, no markdown fences
+            },
+            request_options={"timeout": 120},
         )
         return response.text
 
@@ -291,35 +294,56 @@ class LLMService:
     def parse_llm_response(self, raw_response: str) -> dict:
         """
         Parse the LLM's text output as JSON.
-        LLMs sometimes wrap the JSON in markdown code blocks — this handles that.
-        Raises ValueError with the raw response if nothing can be parsed.
+        Handles markdown code fences and preamble text robustly.
+        Raises ValueError if nothing can be parsed.
         """
         if not raw_response or not raw_response.strip():
             raise ValueError("LLM returned an empty response.")
 
         text = raw_response.strip()
 
-        # Attempt 1: direct JSON parse (ideal case — LLM followed instructions)
+        # Attempt 1: direct JSON parse (ideal — Gemini with response_mime_type=application/json)
         try:
             return json.loads(text)
         except json.JSONDecodeError:
             pass
 
-        # Attempt 2: extract from ```json ... ``` code block
-        match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group(1))
-            except json.JSONDecodeError:
-                pass
+        # Attempt 2: strip markdown code fence then parse
+        stripped = re.sub(r"^```(?:json)?\s*", "", text)
+        stripped = re.sub(r"\s*```\s*$", "", stripped).strip()
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            pass
 
-        # Attempt 3: find the first { ... } block in the text
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group(0))
-            except json.JSONDecodeError:
-                pass
+        # Attempt 3: brace-depth scan — find the outermost { ... } in the text
+        # This handles any preamble/postamble text correctly, even with nested objects.
+        start = text.find("{")
+        if start != -1:
+            depth = 0
+            in_string = False
+            escape_next = False
+            for i, ch in enumerate(text[start:], start):
+                if escape_next:
+                    escape_next = False
+                    continue
+                if ch == "\\" and in_string:
+                    escape_next = True
+                    continue
+                if ch == '"':
+                    in_string = not in_string
+                    continue
+                if in_string:
+                    continue
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(text[start : i + 1])
+                        except json.JSONDecodeError:
+                            break
 
         # All attempts failed
         preview = text[:300] + ("..." if len(text) > 300 else "")
