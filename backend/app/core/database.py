@@ -14,6 +14,14 @@ from app.core.config import get_settings
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
 
 
+def _psycopg2_dsn(url: str) -> str:
+    """Strip SQLAlchemy driver prefix so psycopg2 can parse the DSN."""
+    for prefix in ("postgresql+asyncpg://", "postgresql+psycopg2://"):
+        if url.startswith(prefix):
+            return "postgresql://" + url[len(prefix):]
+    return url
+
+
 def init_db_pool() -> None:
     """
     Create the connection pool.
@@ -27,7 +35,7 @@ def init_db_pool() -> None:
         _pool = psycopg2.pool.ThreadedConnectionPool(
             minconn=1,           # keep at least 1 connection open
             maxconn=10,          # allow up to 10 simultaneous connections
-            dsn=settings.database_url,
+            dsn=_psycopg2_dsn(settings.database_url),
         )
         print("Database connection pool created successfully.")
     except Exception as err:

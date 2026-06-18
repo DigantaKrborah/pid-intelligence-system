@@ -16,7 +16,7 @@ export default defineConfig({
     // both servers appear to the browser as the same origin, avoiding CORS issues.
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: process.env.BACKEND_URL || 'http://localhost:8000',
         changeOrigin: true,   // rewrites the Host header to match the target
       },
     },

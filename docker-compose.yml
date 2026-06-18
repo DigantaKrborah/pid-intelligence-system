@@ -34,7 +34,7 @@ services:
     environment:
       APP_ENV:          development
       OLLAMA_BASE_URL:  http://host.docker.internal:11434
-      PYTHONPATH:       /app
+      PYTHONPATH:       /app:/app/backend
     extra_hosts:
       - "host.docker.internal:host-gateway"   # needed on Linux; harmless on Windows
     volumes:
@@ -52,19 +52,14 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
-    env_file: .env
     environment:
       BACKEND_URL: http://backend:8000
-      PYTHONPATH: /app
     volumes:
-      - ./frontend:/app/frontend             # hot-reload in dev
+      - ./frontend:/app/frontend
+      - /app/frontend/node_modules           # preserve container node_modules
     ports:
-      - "8501:8501"
-    command: >
-      streamlit run frontend/app.py
-        --server.address 0.0.0.0
-        --server.port 8501
-        --server.headless true
+      - "5173:5173"
+    command: npm run dev
 
 volumes:
   postgres_data:
