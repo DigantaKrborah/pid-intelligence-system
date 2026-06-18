@@ -1,7 +1,7 @@
 # Project Status — P&ID Intelligence System
 
-**Last updated:** 2026-06-17  
-**Current phase:** MVP complete — all pages built, bugs fixed, repo committed and pushed
+**Last updated:** 2026-06-18  
+**Current phase:** MVP complete — all pages built, bugs fixed, Docker setup repaired and running
 
 ---
 
@@ -15,7 +15,8 @@
 | 4 | Frontend (React pages + components) | ✅ Complete |
 | 5 | Integration testing + bug fixes | ✅ Complete |
 | 6A | Network / multi-user support | ✅ Complete |
-| 6B+ | Scale-up (future) | ⏳ Not started |
+| 6B | Docker setup repair | ✅ Complete |
+| 6C+ | Scale-up (future) | ⏳ Not started |
 
 ---
 
@@ -96,7 +97,8 @@
 | Prompt | Description | Status |
 |---|---|---|
 | 6A | Multi-user / LAN network access | ✅ Done |
-| 6B+ | (future) | ⏳ Not started |
+| 6B | Docker setup repair | ✅ Done |
+| 6C+ | (future) | ⏳ Not started |
 
 **6A changes:**
 - `main.py` — CORS origins read from `CORS_ORIGINS` env var (comma-separated)
@@ -106,6 +108,22 @@
 - `frontend/.env.production` — template with `VITE_API_URL=http://[SERVER_IP]:8000`
 - `start_all.bat` — auto-detects LAN IP via PowerShell, prints network URLs
 - `docs/NETWORK_SETUP.md` — firewall, Task Scheduler, pg_dump backup guide
+
+**6B changes (2026-06-18):**
+- `docker-compose.yml` — `PYTHONPATH: /app:/app/backend` (was `/app` only; `from app.*`
+  imports failed because `/app/backend` was not on the path)
+- `requirements.txt` — added `python-jose[cryptography]==3.3.0` and `bcrypt==4.2.1`
+  (root file is what Docker builds from; `backend/requirements.txt` is legacy/local only)
+- `backend/app/core/database.py` — added `_psycopg2_dsn()` to strip `postgresql+asyncpg://`
+  prefix before passing `DATABASE_URL` to psycopg2 (which requires plain `postgresql://`)
+- `docker/Dockerfile.frontend` — rewritten from Python/Streamlit to Node 20 Alpine; old
+  `frontend/app.py` Streamlit entrypoint no longer exists (frontend is React/Vite)
+- `docker-compose.yml` frontend service — port `8501→5173`, command `npm run dev`, added
+  anonymous volume for `/app/frontend/node_modules`
+- `frontend/vite.config.js` — Vite proxy target uses `process.env.BACKEND_URL ||
+  'http://localhost:8000'` so Docker container routes to the `backend` service correctly
+- `frontend/src/api/client.js` — removed hardcoded `Content-Type: application/json` header
+  (broke multipart/form-data file uploads; axios sets the correct header automatically)
 
 ---
 

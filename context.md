@@ -1,6 +1,6 @@
 # Project Context — P&ID Intelligence System
 
-**Last updated:** 2026-06-17  
+**Last updated:** 2026-06-18  
 **Project root:** `E:\PID_Reader`  
 **GitHub:** https://github.com/DigantaKrborah/pid-intelligence-system  
 **Branch:** `main` (force-pushed; old Streamlit history replaced by new MVP)
@@ -18,18 +18,18 @@ ChromaDB via a separate documents flow).
 
 ## Tech Stack (current — everything below is ACTIVE)
 
-| Layer | Technology |
-|---|---|
-| Frontend | React 18 + Vite + Tailwind CSS + TanStack Query v5 + React Router v6 |
-| API client | Axios — `frontend/src/api/client.js` |
-| Backend | Python 3.11 + FastAPI + uvicorn |
-| Database | PostgreSQL 15 (local Windows install, not Docker) |
-| DB access | psycopg2 with `RealDictCursor` — no ORM |
-| Auth | JWT (python-jose) — token stored in `localStorage` as `pid_token` |
-| AI / LLM | Configurable: Claude (anthropic), OpenAI (openai), Gemini (google-generativeai) |
-| PDF splitting | pdf2image + Poppler (at `C:/poppler/Library/bin`) |
-| Doc indexing | ChromaDB (local) via `llm_service.analyze_image` |
-| Config | pydantic-settings reading from `backend/.env` |
+| Layer | Technology | How it runs |
+|---|---|---|
+| Frontend | React 18 + Vite + Tailwind CSS + TanStack Query v5 + React Router v6 | Locally via `npm run dev` (port 5173) |
+| API client | Axios — `frontend/src/api/client.js` | — |
+| Backend | Python 3.11 + FastAPI + uvicorn | Docker container (port 8000) |
+| Database | PostgreSQL 16 | Docker container (host port 5433 → internal 5432) |
+| DB access | psycopg2 with `RealDictCursor` — no ORM | — |
+| Auth | JWT (python-jose) + bcrypt — token stored in `localStorage` as `pid_token` | — |
+| AI / LLM | Configurable: Claude (anthropic), OpenAI (openai), Gemini (google-generativeai) | — |
+| PDF splitting | pdf2image + Poppler (at `C:/poppler/Library/bin`) | — |
+| Doc indexing | ChromaDB (local) via `llm_service.analyze_image` | — |
+| Config | pydantic-settings — reads env vars injected by docker-compose (`env_file: .env`) | — |
 
 **What is NOT used (deleted):** SQLAlchemy, LangChain, Streamlit, ChromaDB agents,
 NetworkX, Ollama, Gemini Vision (for P&IDs — replaced by configurable LLM provider).
@@ -131,6 +131,24 @@ E:\PID_Reader\
 
 ## Key Architecture Decisions
 
+### Docker setup
+Three services defined in `docker-compose.yml`:
+- **postgres** — PostgreSQL 16, data persisted in `postgres_data` volume, health-checked
+- **backend** — FastAPI app; `PYTHONPATH=/app:/app/backend` (both needed: `/app` for
+  `uvicorn backend.main:app`, `/app/backend` for `from app.*` imports); hot-reload via
+  `./backend:/app/backend` volume mount
+- **frontend** — Node 20 Alpine running `npm run dev`; port 5173; anonymous volume
+  `/app/frontend/node_modules` prevents the host's Windows node_modules from overriding
+  the Linux ones in the container
+
+The `DATABASE_URL` in `.env` uses SQLAlchemy async format (`postgresql+asyncpg://`).
+`database.py` strips the driver prefix before passing it to psycopg2 via `_psycopg2_dsn()`.
+
+In development, the frontend is typically run locally (`npm run dev` on the host) rather than
+via Docker, because port 5173 is usually already bound. The backend and postgres always run
+in Docker. The Vite proxy uses `process.env.BACKEND_URL || 'http://localhost:8000'` so it
+routes correctly whether running inside Docker (`BACKEND_URL=http://backend:8000`) or locally.
+
 ### Database access
 Pure psycopg2 with `RealDictCursor`. Every route that needs the DB calls `get_db()` which
 returns a connection from the pool. UUIDs must be cast with `::text` in queries because
@@ -181,16 +199,21 @@ Audit action strings: `LOGIN`, `LOGOUT`, `CREATE_UNIT`, `UPDATE_UNIT`, `UPLOAD_D
 
 ## Environment Files
 
-### `backend/.env` (gitignored — fill in locally)
+### `.env` (root — gitignored, used by docker-compose `env_file: .env`)
 ```
-DATABASE_URL=postgresql://postgres:[PASSWORD]@localhost:5432/pid_system
-UPLOAD_BASE_PATH=E:/PID_Reader/uploads
+DATABASE_URL=postgresql+asyncpg://pid_user:dev_password@postgres:5432/pid_intelligence
+POSTGRES_DB=pid_intelligence
+POSTGRES_USER=pid_user
+POSTGRES_PASSWORD=dev_password
+UPLOAD_BASE_PATH=/app/uploads
 JWT_SECRET=[32-char random hex]
 JWT_EXPIRE_HOURS=8
 DEFAULT_LLM_PROVIDER=claude
 POPPLER_PATH=C:/poppler/Library/bin
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
+The `DATABASE_URL` host is `postgres` (Docker service name) — works inside Docker network.
+`database.py` converts `postgresql+asyncpg://` → `postgresql://` before psycopg2 sees it.
 
 ### `frontend/.env` (gitignored)
 ```
@@ -207,17 +230,28 @@ VITE_API_URL=http://[SERVER_IP]:8000
 ## Running the App
 
 ```
-# First time only:
-setup_venv.bat        ← creates .venv, pip install, npm install, seeds DB
+# Start backend + postgres (Docker):
+docker-compose up -d postgres backend
 
-# Every time:
-start_all.bat         ← opens backend (port 8000) + frontend (port 5173) in separate windows
+# Start frontend (locally, in a separate terminal):
+cd frontend
+npm run dev
 
 # Login:
 http://localhost:5173
 username: admin
 password: Admin@123
+
+# Or start everything in Docker (frontend on port 5173):
+docker-compose up -d
+
+# Rebuild after requirements.txt changes:
+docker-compose build --no-cache backend
+docker-compose up -d backend
 ```
+
+**Legacy bat files** (`start_all.bat`, `setup_venv.bat`, etc.) still exist for running the
+backend outside Docker, but the Docker workflow above is the current standard.
 
 ---
 
@@ -248,6 +282,11 @@ users, extraction status. Requires `uvicorn main:app` running on port 8000.
 | `onSuccess` in SettingsPage useQuery (removed in react-query v5) | Removed; `useEffect` watching `current` data handles population |
 | `keepPreviousData: true` in AuditPage (v4 syntax) | Removed |
 | `GET /api/audit/` was registered as `GET /logs` causing 404 | `audit.py` → route changed to `GET /` |
+| Docker backend: `ModuleNotFoundError: No module named 'app'` | `docker-compose.yml` → `PYTHONPATH: /app:/app/backend` |
+| Docker backend: `ModuleNotFoundError: No module named 'jose'` | `requirements.txt` → added `python-jose[cryptography]==3.3.0` |
+| Docker backend: `psycopg2.ProgrammingError: invalid dsn` (asyncpg URL passed to psycopg2) | `database.py` → `_psycopg2_dsn()` strips `+asyncpg` driver prefix |
+| Docker frontend: Streamlit `app.py` entrypoint no longer exists (frontend is React/Vite) | `Dockerfile.frontend` → rewritten to Node 20; `docker-compose.yml` → port 5173, `npm run dev` |
+| File uploads broke when `Content-Type: application/json` was set globally on axios | `client.js` → removed hardcoded `Content-Type` header; axios sets it per-request |
 
 ---
 
