@@ -243,13 +243,16 @@ class LLMService:
 
         # Gemini accepts a PIL image directly
         pil_image = PILImage.open(str(image_path))
+        # gemini-2.5-flash/pro are "thinking" models: reasoning tokens consume the
+        # max_output_tokens budget, leaving almost none for actual JSON output with 8192.
+        # Use 65536 so the thinking + JSON fit comfortably.
         response = model.generate_content(
             [prompt, pil_image],
             generation_config={
-                "max_output_tokens": 8192,
+                "max_output_tokens": 65536,
                 "response_mime_type": "application/json",  # return raw JSON, no markdown fences
             },
-            request_options={"timeout": 120},
+            request_options={"timeout": 300},
         )
         return response.text
 

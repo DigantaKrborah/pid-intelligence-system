@@ -310,33 +310,59 @@ def _extract_page_with_conn(
         except Exception as e:
             logger.warning(f"Could not insert line spec '{line_num}': {e}")
 
-    # 10. Insert connectivity edges (drawing-level, not page-level in schema)
+    # 10. Insert connectivity edges
+    # Normalize tag-type and direction values to match the DB CHECK constraints:
+    #   source/target_tag_type  IN ('EQUIPMENT', 'INSTRUMENT', 'LINE')
+    #   direction               IN ('UPSTREAM', 'DOWNSTREAM')
+    # LLM may return 'PUMP', 'DRUM', 'OTHERS', etc. — map them to 'EQUIPMENT'.
+    _VALID_CONN_TYPES = {"EQUIPMENT", "INSTRUMENT", "LINE"}
+    _VALID_DIRECTIONS = {"UPSTREAM", "DOWNSTREAM"}
+
+    def _norm_conn_type(v: str) -> str:
+        t = (v or "").upper().strip()
+        return t if t in _VALID_CONN_TYPES else "EQUIPMENT"
+
+    def _norm_direction(v: str) -> str:
+        d = (v or "").upper().strip()
+        return d if d in _VALID_DIRECTIONS else "DOWNSTREAM"
+
     conn_count = 0
-    for edge in extracted.get("connectivity", []):
+    for i, edge in enumerate(extracted.get("connectivity", [])):
         src = (edge.get("source_tag") or "").upper().strip()
         tgt = (edge.get("target_tag") or "").upper().strip()
         if not src or not tgt:
             continue
+
+        src_type = _norm_conn_type(edge.get("source_tag_type", "EQUIPMENT"))
+        tgt_type = _norm_conn_type(edge.get("target_tag_type", "EQUIPMENT"))
+        direction = _norm_direction(edge.get("direction", "DOWNSTREAM"))
+
+        # Use a savepoint so a constraint violation here does not abort the
+        # whole transaction — psycopg2 leaves the connection in "aborted"
+        # state after any statement error, but ROLLBACK TO SAVEPOINT recovers it.
+        sp_name = f"sp_conn_{i}"
         try:
             with db_conn.cursor() as cur:
+                cur.execute(f"SAVEPOINT {sp_name}")
                 cur.execute(
                     """
                     INSERT INTO tag_connectivity
                         (unit_id, drawing_id, source_tag, source_tag_type,
                          target_tag, target_tag_type, direction, via_line)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT DO NOTHING
                     """,
-                    (
-                        unit_id, drawing_id, src,
-                        edge.get("source_tag_type", "EQUIPMENT"),
-                        tgt,
-                        edge.get("target_tag_type", "EQUIPMENT"),
-                        edge.get("direction", "DOWNSTREAM"),
-                        edge.get("via_line", ""),
-                    ),
+                    (unit_id, drawing_id, src, src_type, tgt, tgt_type,
+                     direction, edge.get("via_line", "")),
                 )
             conn_count += 1
         except Exception as e:
+            # Roll back to the savepoint so the surrounding transaction stays alive
+            try:
+                with db_conn.cursor() as cur:
+                    cur.execute(f"ROLLBACK TO SAVEPOINT {sp_name}")
+            except Exception:
+                pass
             logger.warning(f"Could not insert connectivity {src}→{tgt}: {e}")
 
     # 11. Mark page as completed and store raw LLM response for audit

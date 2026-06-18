@@ -1,6 +1,6 @@
 # Project Context — P&ID Intelligence System
 
-**Last updated:** 2026-06-18  
+**Last updated:** 2026-06-18 (session 4)  
 **Project root:** `E:\PID_Reader`  
 **GitHub:** https://github.com/DigantaKrborah/pid-intelligence-system  
 **Branch:** `main` (force-pushed; old Streamlit history replaced by new MVP)
@@ -144,6 +144,12 @@ Three services defined in `docker-compose.yml`:
 The `DATABASE_URL` in `.env` uses SQLAlchemy async format (`postgresql+asyncpg://`).
 `database.py` strips the driver prefix before passing it to psycopg2 via `_psycopg2_dsn()`.
 
+**Database name gotcha:** Docker PostgreSQL database is `pid_intelligence` (set by `POSTGRES_DB`
+in root `.env` / docker-compose `environment:` defaults). `backend/.env` says `pid_system` — that
+file is for local non-Docker dev only and is ignored when Docker injects env vars. When querying
+the DB directly, connect to `pid_intelligence` at `localhost:5433` (host port mapped to internal 5432).
+Example: `docker exec pid_reader-postgres-1 psql -U pid_user -d pid_intelligence`
+
 In development, the frontend is typically run locally (`npm run dev` on the host) rather than
 via Docker, because port 5173 is usually already bound. The backend and postgres always run
 in Docker. The Vite proxy uses `process.env.BACKEND_URL || 'http://localhost:8000'` so it
@@ -169,6 +175,24 @@ psycopg2 returns them as `uuid.UUID` objects which don't JSON-serialise automati
 5. Extracted tags written to `equipment_tags`, `instrument_tags`, `line_specs`, `connectivity` tables
 6. `processing_jobs` table tracks status (pending → processing → completed/failed)
 
+**Gemini 2.5 Flash specifics (verified 2026-06-18):**
+`gemini-2.5-flash` is a "thinking" model — it spends internal reasoning tokens before emitting
+output. These reasoning tokens count against `max_output_tokens`. With `8192`, nearly all tokens
+are consumed by thinking, leaving only ~100–200 for the JSON response (truncated → parse failure).
+Fix: `max_output_tokens: 65536`, `timeout: 300`. Expect ~4 minutes per page.
+`gemini-2.0-flash` (non-thinking) is faster (~30–60 s/page) but less accurate on complex P&IDs.
+
+**Connectivity insert safety (psycopg2 savepoint pattern):**
+`tag_connectivity` has `CHECK (source_tag_type IN ('EQUIPMENT','INSTRUMENT','LINE'))` and similar
+for `target_tag_type` and `direction`. LLMs return sub-types like `'DRUM'`, `'OTHERS'` which
+violate these constraints. Two defences in `extraction.py`:
+1. `_norm_conn_type()` / `_norm_direction()` coerce unknown values to valid defaults before INSERT.
+2. Each connectivity INSERT wrapped in `SAVEPOINT sp_conn_N` / `ROLLBACK TO SAVEPOINT sp_conn_N`
+   using a fresh cursor in the except block (original cursor is invalidated after a constraint error).
+   This prevents one bad edge from aborting the entire psycopg2 transaction — without it the final
+   `UPDATE drawing_pages SET extraction_status='completed'` silently fails, leaving the page
+   permanently stuck in `processing`.
+
 ### Document indexing flow
 1. User uploads PDF/docx → stored in `data/manuals/{document_id}/`
 2. `POST /api/documents/{id}/index` → synchronous, blocks until done (10 min axios timeout)
@@ -182,6 +206,12 @@ To add a server IP for LAN access: append `http://192.168.x.x:5173` to CORS_ORIG
 ### Frontend API routing
 - **Dev mode**: `VITE_API_URL` is blank → axios `baseURL=''` → Vite proxy forwards `/api/*` to `localhost:8000`
 - **Production build**: set `VITE_API_URL=http://192.168.x.x:8000` in `frontend/.env.production` then `npm run build`
+
+### Tailwind CSS config (required — do not remove)
+`frontend/tailwind.config.js` and `frontend/postcss.config.js` are both required for Tailwind to
+work with Vite. Without `tailwind.config.js`, Tailwind JIT does not scan JSX files → no utility
+classes are generated → the entire UI renders invisible (white text on white background). Without
+`postcss.config.js`, Vite's PostCSS pipeline never runs Tailwind or autoprefixer at all.
 
 ### React Query v5 notes
 - `onSuccess` / `onError` callbacks removed from `useQuery` in v5 — use `useEffect` watching `data`
@@ -290,6 +320,9 @@ users, extraction status. Requires `uvicorn main:app` running on port 8000.
 | `POST /api/settings/llm` returned 500: `column "api_key" does not exist` | `db/schema.sql` → added `api_key TEXT` column to `llm_settings`; rebuilt `docker/init.sql`; re-init postgres volume |
 | `extraction.py` background task: `psycopg2.ProgrammingError: invalid dsn` | `extraction.py` → imported and applied `_psycopg2_dsn()` before passing URL to `psycopg2.connect()` |
 | Poppler path `C:/poppler-25.12.0/Library/bin` (from `backend/.env`) used inside Linux Docker container | Root `.env` → `POPPLER_PATH=` (empty) overrides via docker-compose env var injection; `file_service.py` → `poppler_path or None` so empty string falls back to system PATH |
+| Frontend blank page — all elements white on white background | `frontend/tailwind.config.js` and `frontend/postcss.config.js` were missing; Tailwind JIT never scanned JSX files so no utility classes were emitted. Created both config files. |
+| Gemini 2.5 Flash extraction: `Could not parse LLM response as JSON` (JSON truncated mid-structure) | `llm_service.py` `_extract_gemini()` → `max_output_tokens: 8192 → 65536`, `timeout: 120 → 300`. Gemini 2.5 Flash is a thinking model; reasoning tokens consume the output budget, leaving ~100 tokens for actual JSON with the old limit. |
+| `tag_connectivity` INSERT fails: `CHECK constraint source_tag_type IN (EQUIPMENT,INSTRUMENT,LINE)` — LLM returns `DRUM`, `OTHERS` etc. → psycopg2 aborts entire transaction → `extraction_status` never set to `completed` → page stuck in `processing` forever | `extraction.py` → added `_norm_conn_type()` / `_norm_direction()` normalisation helpers + savepoint/rollback pattern per-insert so one bad row doesn't abort the whole transaction. |
 
 ---
 

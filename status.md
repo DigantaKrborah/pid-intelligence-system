@@ -1,7 +1,7 @@
 # Project Status — P&ID Intelligence System
 
-**Last updated:** 2026-06-18  
-**Current phase:** MVP complete — all pages built, bugs fixed, Docker setup repaired and running
+**Last updated:** 2026-06-18 (session 4)  
+**Current phase:** MVP complete — end-to-end extraction working; first successful tag extraction verified
 
 ---
 
@@ -16,7 +16,8 @@
 | 5 | Integration testing + bug fixes | ✅ Complete |
 | 6A | Network / multi-user support | ✅ Complete |
 | 6B | Docker setup repair | ✅ Complete |
-| 6C+ | Scale-up (future) | ⏳ Not started |
+| 6C | Extraction pipeline fixes (Gemini thinking model, TX abort) | ✅ Complete |
+| 6D+ | Scale-up (future) | ⏳ Not started |
 
 ---
 
@@ -109,6 +110,31 @@
 - `start_all.bat` — auto-detects LAN IP via PowerShell, prints network URLs
 - `docs/NETWORK_SETUP.md` — firewall, Task Scheduler, pg_dump backup guide
 
+**6C changes (2026-06-18 session 4):**
+- `frontend/tailwind.config.js` — **created** (was missing); without it Tailwind JIT never scans
+  JSX component files → no utility classes generated → login page rendered blank (white on white).
+  Content paths: `['./index.html', './src/**/*.{js,jsx,ts,tsx}']`
+- `frontend/postcss.config.js` — **created** (was missing); without it Vite's PostCSS pipeline
+  never runs Tailwind or autoprefixer. Plugins: `{ tailwindcss: {}, autoprefixer: {} }`
+- `backend/app/services/llm_service.py` `_extract_gemini()` — `max_output_tokens: 8192 → 65536`.
+  `gemini-2.5-flash` is a "thinking" model: internal reasoning tokens consume the `max_output_tokens`
+  budget first. With 8192, only ~100–200 tokens remained for actual JSON output → truncated JSON →
+  parse failure every time. 65536 leaves enough room. Timeout also raised from 120 → 300 s (thinking
+  takes ~4 minutes per page).
+- `backend/app/api/routes/extraction.py` connectivity inserts — dual fix for stuck-in-processing bug:
+  1. **Value normalisation**: LLM returns equipment sub-types like `'DRUM'`, `'OTHERS'` but
+     `tag_connectivity.source_tag_type` has `CHECK IN ('EQUIPMENT','INSTRUMENT','LINE')`. Added
+     `_norm_conn_type()` and `_norm_direction()` helpers to coerce unknown values to safe defaults.
+  2. **Savepoint pattern**: with psycopg2 `autocommit=False`, a failed INSERT aborts the entire
+     connection (all subsequent statements, including the final `UPDATE drawing_pages SET
+     extraction_status='completed'`, silently fail). Each connectivity INSERT now runs inside
+     `SAVEPOINT sp_conn_N` / `ROLLBACK TO SAVEPOINT sp_conn_N` so one bad edge doesn't abort the
+     whole transaction. Also added `ON CONFLICT DO NOTHING` to avoid duplicate-key failures.
+
+**First successful end-to-end extraction (2026-06-18):**
+Drawing E_172B (CDU), 1 page, ~229 seconds. Result: 4 equipment tags, 23 instrument tags,
+11 line specs, 25 connectivity edges. All stored in `pid_intelligence` PostgreSQL DB.
+
 **6B changes (2026-06-18):**
 - `docker-compose.yml` — `PYTHONPATH: /app:/app/backend` (was `/app` only; `from app.*`
   imports failed because `/app/backend` was not on the path)
@@ -169,12 +195,13 @@
 
 - Full auth flow (login, JWT, role-based access, audit trail)
 - Process unit CRUD
-- P&ID PDF upload → split to pages → LLM extraction → tag storage
+- P&ID PDF upload → split to pages → LLM extraction (Gemini 2.5 Flash verified) → tag storage
 - Equipment tag search and detail view
 - Document upload + LLM page indexing
 - Settings page (LLM provider/model/key, user management, unit editing)
 - Audit log with filters and CSV export
 - LAN network access (with correct .env config)
+- **End-to-end extraction verified** — 229s per page for Gemini 2.5 Flash; expect ~4 min/page
 
 ## What Is NOT Built Yet
 
